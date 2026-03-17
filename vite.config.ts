@@ -3,20 +3,21 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  base: '/pwa-editor/',
   plugins: [
     react(),
     VitePWA({
       registerType: 'prompt',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
-        name: 'Offline PWA Text Editor',
-        short_name: 'TextEditor',
+        name: 'PWA Editor',
+        short_name: 'PWA Editor',
         description: 'A powerful offline-capable text editor with syntax highlighting',
         theme_color: '#1e1e1e',
         background_color: '#1e1e1e',
         display: 'standalone',
         orientation: 'any',
-        start_url: '/',
+        start_url: './',
         icons: [
           {
             src: 'pwa-192x192.png',
