@@ -1,5 +1,10 @@
 # PWA Text Editor
 
+[![Deploy to GitHub Pages](https://github.com/petescarth/pwa-editor/actions/workflows/deploy.yml/badge.svg)](https://github.com/petescarth/pwa-editor/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+**Test URL:** [https://petescarth.github.io/pwa-editor/](https://petescarth.github.io/pwa-editor/)
+
 A powerful, offline-capable text editor built as a Progressive Web App. Features syntax highlighting for 18+ languages, multiple tabs, find/replace, and works entirely in your browser with no server required.
 
 ## Features
