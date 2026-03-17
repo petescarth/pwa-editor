@@ -17,7 +17,8 @@ export default defineConfig({
         background_color: '#1e1e1e',
         display: 'standalone',
         orientation: 'any',
-        start_url: './',
+        start_url: '/pwa-editor/',
+        scope: '/pwa-editor/',
         icons: [
           {
             src: 'web-app-manifest-192x192.png',
