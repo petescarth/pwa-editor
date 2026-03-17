@@ -96,7 +96,7 @@ export function useEditorStore() {
     if (isLoading) return;
 
     const session: SessionState = {
-      tabs: tabs.map(({ fileHandle, ...tab }) => tab),
+      tabs: tabs.map(({ fileHandle: _fileHandle, ...tab }) => tab),
       activeTabId,
       lastOpened: Date.now(),
     };
