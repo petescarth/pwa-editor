@@ -138,7 +138,7 @@ export const LANGUAGES: LanguageConfig[] = [
     name: 'Plain Text',
     extensions: ['txt', 'text', 'log'],
     mimeTypes: ['text/plain'],
-    load: () => new LanguageSupport(StreamLanguage.define({ token: () => null })),
+    load: () => new LanguageSupport(StreamLanguage.define({ token: (stream) => { stream.next(); return null; } })),
   },
 ];
 
