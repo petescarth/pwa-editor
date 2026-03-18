@@ -46,6 +46,7 @@ export function FindReplace({
 
     const query = new SearchQuery({
       search: searchText,
+      replace: replaceText,
       caseSensitive,
       regexp: useRegex,
       wholeWord,
@@ -76,7 +77,7 @@ export function FindReplace({
     }
 
     setMatchCount(total > 0 ? { current, total } : null);
-  }, [editorView, searchText, caseSensitive, wholeWord, useRegex]);
+  }, [editorView, searchText, replaceText, caseSensitive, wholeWord, useRegex]);
 
   useEffect(() => {
     updateSearch();
