@@ -33,10 +33,10 @@ function App() {
     updateTabContent,
     updateTabCursor,
     updateSettings,
-    handleOpenFile,
+    handleOpenFile: openFileFromStore,
     handleOpenRecentFile: openRecentFileFromStore,
     handleSaveFile,
-    handleSaveFileAs,
+    handleSaveFileAs: saveFileAsFromStore,
     reorderTabs,
     switchToTab,
     switchToNextTab,
@@ -59,6 +59,22 @@ function App() {
   useEffect(() => {
     getRecentFiles().then(setRecentFiles);
   }, []);
+
+  const refreshRecentFiles = useCallback(() => {
+    getRecentFiles().then(setRecentFiles).catch((err) => {
+      console.error('Failed to refresh recent files:', err);
+    });
+  }, []);
+
+  const handleOpenFile = useCallback(async () => {
+    await openFileFromStore();
+    refreshRecentFiles();
+  }, [openFileFromStore, refreshRecentFiles]);
+
+  const handleSaveFileAs = useCallback(async (tabId?: string) => {
+    await saveFileAsFromStore(tabId);
+    refreshRecentFiles();
+  }, [saveFileAsFromStore, refreshRecentFiles]);
 
   const handleNewFile = useCallback(() => createTab(), [createTab]);
 
@@ -159,10 +175,8 @@ function App() {
 
   const handleOpenRecentFile = useCallback(async (file: RecentFile) => {
     await openRecentFileFromStore(file);
-    getRecentFiles().then(setRecentFiles).catch((err) => {
-      console.error('Failed to refresh recent files:', err);
-    });
-  }, [openRecentFileFromStore]);
+    refreshRecentFiles();
+  }, [openRecentFileFromStore, refreshRecentFiles]);
 
   const handleClearRecentFiles = useCallback(async () => {
     await clearRecentFiles();
