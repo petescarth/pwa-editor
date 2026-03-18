@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
-import type { EditorSettings } from '../lib/db';
+import { useEffect, useState } from 'react';
+import { DEFAULT_SETTINGS, type EditorSettings } from '../lib/db';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -229,6 +229,33 @@ export function SettingsModal({
                     />
                   </div>
                 )}
+              </div>
+            </section>
+
+            <section>
+              <h3 className="text-sm font-medium text-[#cccccc] mb-3">Files</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-[#858585] mb-1">
+                    Max File Size: {localSettings.maxFileSize} MB
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="500"
+                    step="1"
+                    value={localSettings.maxFileSize}
+                    onChange={(e) =>
+                      handleChange('maxFileSize', parseInt(e.target.value, 10))
+                    }
+                    className="w-full accent-[#007acc]"
+                  />
+                  {localSettings.maxFileSize > DEFAULT_SETTINGS.maxFileSize && (
+                    <p className="text-xs text-yellow-400 mt-1">
+                      Values above 100 MB may cause browser slowdowns or crashes.
+                    </p>
+                  )}
+                </div>
               </div>
             </section>
 

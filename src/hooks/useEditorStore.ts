@@ -1,19 +1,20 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  getSettings,
-  saveSettings,
-  getSession,
-  saveSession,
-  saveRecoveryData,
-  getRecoveryData,
   clearRecoveryData,
   DEFAULT_SETTINGS,
+  getRecoveryData,
+  getSession,
+  getSettings,
+  saveRecoveryData,
+  saveSession,
+  saveSettings,
   type EditorSettings,
-  type TabState,
   type SessionState,
+  type TabState,
 } from '../lib/db';
 import { openFile, openFiles, saveFile, saveFileAs, type FileHandle } from '../lib/fileSystem';
 import { getLanguageByExtension } from '../lib/languages';
+import { useToast } from './useToast';
 
 let tabIdCounter = 0;
 
@@ -38,6 +39,7 @@ interface TabWithHandle extends TabState {
 }
 
 export function useEditorStore() {
+  const { showToast } = useToast();
   const [tabs, setTabs] = useState<TabWithHandle[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [settings, setSettings] = useState<EditorSettings>(DEFAULT_SETTINGS);
@@ -229,51 +231,64 @@ export function useEditorStore() {
   }, []);
 
   const handleOpenFile = useCallback(async () => {
-    const result = await openFile();
-    if (!result) return;
+    try {
+      const result = await openFile(settings.maxFileSize);
+      if (!result) return;
 
-    const existingTab = tabs.find(
-      (t) => t.filename === result.handle.name && !t.isModified
-    );
-
-    if (existingTab) {
-      setActiveTabId(existingTab.id);
-      return;
-    }
-
-    const newTab: TabWithHandle = {
-      ...createNewTab(result.handle.name, result.content),
-      fileHandle: result.handle,
-    };
-
-    setTabs((prev) => [...prev, newTab]);
-    setActiveTabId(newTab.id);
-  }, [tabs]);
-
-  const handleOpenFiles = useCallback(async () => {
-    const results = await openFiles();
-    if (results.length === 0) return;
-
-    const newTabs: TabWithHandle[] = [];
-
-    for (const result of results) {
       const existingTab = tabs.find(
         (t) => t.filename === result.handle.name && !t.isModified
       );
 
-      if (!existingTab) {
-        newTabs.push({
-          ...createNewTab(result.handle.name, result.content),
-          fileHandle: result.handle,
-        });
+      if (existingTab) {
+        setActiveTabId(existingTab.id);
+        return;
       }
-    }
 
-    if (newTabs.length > 0) {
-      setTabs((prev) => [...prev, ...newTabs]);
-      setActiveTabId(newTabs[newTabs.length - 1].id);
+      const newTab: TabWithHandle = {
+        ...createNewTab(result.handle.name, result.content),
+        fileHandle: result.handle,
+      };
+
+      setTabs((prev) => [...prev, newTab]);
+      setActiveTabId(newTab.id);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to open file', 'error');
     }
-  }, [tabs]);
+  }, [tabs, settings.maxFileSize]);
+
+  const handleOpenFiles = useCallback(async () => {
+    try {
+      const { results, skipped } = await openFiles(settings.maxFileSize);
+
+      if (skipped.length > 0) {
+        showToast('Some files were skipped:\n' + skipped.join('\n'), 'warning');
+      }
+
+      if (results.length === 0) return; // nothing to open (all skipped or cancelled)
+
+      const newTabs: TabWithHandle[] = [];
+
+      for (const result of results) {
+        const existingTab = tabs.find(
+          (t) => t.filename === result.handle.name && !t.isModified
+        );
+
+        if (!existingTab) {
+          newTabs.push({
+            ...createNewTab(result.handle.name, result.content),
+            fileHandle: result.handle,
+          });
+        }
+      }
+
+      if (newTabs.length > 0) {
+        setTabs((prev) => [...prev, ...newTabs]);
+        setActiveTabId(newTabs[newTabs.length - 1].id);
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to open files', 'error');
+    }
+  }, [tabs, settings.maxFileSize]);
 
   const handleSaveFile = useCallback(async (tabId?: string) => {
     const targetId = tabId || activeTabId;

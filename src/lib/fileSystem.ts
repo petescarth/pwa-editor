@@ -61,7 +61,7 @@ export function isFileSystemAccessSupported(): boolean {
   return 'showOpenFilePicker' in window && 'showSaveFilePicker' in window;
 }
 
-export async function openFile(): Promise<{ content: string; handle: FileHandle } | null> {
+export async function openFile(maxFileSizeMB: number = 100): Promise<{ content: string; handle: FileHandle } | null> {
   if (isFileSystemAccessSupported()) {
     try {
       const [fileHandle] = await window.showOpenFilePicker!({
@@ -69,6 +69,12 @@ export async function openFile(): Promise<{ content: string; handle: FileHandle 
         types: FILE_TYPES,
       });
       const file = await fileHandle.getFile();
+      
+      const maxFileSizeBytes = maxFileSizeMB * 1024 * 1024;
+      if (file.size > maxFileSizeBytes) {
+        throw new Error(`File "${file.name}" is too large. Maximum size is ${maxFileSizeMB}MB.`);
+      }
+
       const content = await file.text();
 
       await addRecentFile({
@@ -92,20 +98,26 @@ export async function openFile(): Promise<{ content: string; handle: FileHandle 
       throw err;
     }
   } else {
-    return openFileFallback();
+    return openFileFallback(maxFileSizeMB);
   }
 }
 
-export async function openFiles(): Promise<Array<{ content: string; handle: FileHandle }>> {
+export async function openFiles(maxFileSizeMB: number = 100): Promise<{ results: Array<{ content: string; handle: FileHandle }>; skipped: string[] }> {
   if (isFileSystemAccessSupported()) {
     try {
       const fileHandles = await window.showOpenFilePicker!({
         multiple: true,
         types: FILE_TYPES,
       });
-      const results = await Promise.all(
+      const maxFileSizeBytes = maxFileSizeMB * 1024 * 1024;
+      const settled = await Promise.allSettled(
         fileHandles.map(async (fileHandle) => {
           const file = await fileHandle.getFile();
+
+          if (file.size > maxFileSizeBytes) {
+            throw new Error(`File "${file.name}" is too large. Maximum size is ${maxFileSizeMB}MB.`);
+          }
+
           const content = await file.text();
 
           await addRecentFile({
@@ -124,48 +136,67 @@ export async function openFiles(): Promise<Array<{ content: string; handle: File
           };
         })
       );
-      return results;
+
+      const skipped = settled
+        .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+        .map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason)));
+
+      const results = settled
+        .filter((r) => r.status === 'fulfilled')
+        .map((r) => (r as PromiseFulfilledResult<{ content: string; handle: FileHandle }>).value);
+
+      return { results, skipped };
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
-        return [];
+        return { results: [], skipped: [] };
       }
       throw err;
     }
   } else {
-    const result = await openFileFallback();
-    return result ? [result] : [];
+    const result = await openFileFallback(maxFileSizeMB);
+    return { results: result ? [result] : [], skipped: [] };
   }
 }
 
-function openFileFallback(): Promise<{ content: string; handle: FileHandle } | null> {
-  return new Promise((resolve) => {
+function openFileFallback(maxFileSizeMB: number = 100): Promise<{ content: string; handle: FileHandle } | null> {
+  return new Promise((resolve, reject) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.txt,.js,.ts,.jsx,.tsx,.py,.html,.css,.json,.md,.sql,.yaml,.yml,.xml,.rs,.cpp,.c,.go,.sh,.toml,.log,.text';
 
     input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) {
-        resolve(null);
-        return;
-      }
+      try {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) {
+          resolve(null);
+          return;
+        }
 
-      const content = await file.text();
+        const maxFileSizeBytes = maxFileSizeMB * 1024 * 1024;
+        if (file.size > maxFileSizeBytes) {
+          reject(new Error(`File "${file.name}" is too large. Maximum size is ${maxFileSizeMB}MB.`));
+          return;
+        }
 
-      await addRecentFile({
-        path: file.name,
-        name: file.name,
-        lastOpened: Date.now(),
-      });
+        const content = await file.text();
 
-      resolve({
-        content,
-        handle: {
-          handle: null,
-          name: file.name,
+        await addRecentFile({
           path: file.name,
-        },
-      });
+          name: file.name,
+          lastOpened: Date.now(),
+        });
+
+        resolve({
+          content,
+          handle: {
+            handle: null,
+            name: file.name,
+            path: file.name,
+          },
+        });
+      } catch (err) {
+        reject(err);
+      }
     };
 
     input.oncancel = () => resolve(null);
@@ -246,7 +277,20 @@ function downloadFile(content: string, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export async function readFileFromHandle(handle: FileSystemFileHandle): Promise<string> {
+/**
+ * Read the text content of a previously obtained file handle.
+ * @param handle - The FileSystemFileHandle to read from.
+ * @param maxFileSizeMB - Maximum allowed file size in megabytes. Callers should
+ *   pass `settings.maxFileSize` so the user-configured limit is respected; the
+ *   default of 100 MB is only a safety fallback.
+ */
+export async function readFileFromHandle(handle: FileSystemFileHandle, maxFileSizeMB: number): Promise<string> {
   const file = await handle.getFile();
+  
+  const maxFileSizeBytes = maxFileSizeMB * 1024 * 1024;
+  if (file.size > maxFileSizeBytes) {
+    throw new Error(`File "${file.name}" is too large. Maximum size is ${maxFileSizeMB}MB.`);
+  }
+  
   return file.text();
 }
