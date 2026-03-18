@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RecentFile } from '../lib/db';
 import {
   clearRecoveryData,
   DEFAULT_SETTINGS,
@@ -12,7 +13,7 @@ import {
   type SessionState,
   type TabState,
 } from '../lib/db';
-import { openFile, openFiles, saveFile, saveFileAs, type FileHandle } from '../lib/fileSystem';
+import { openFile, openFiles, openRecentFile, saveFile, saveFileAs, type FileHandle } from '../lib/fileSystem';
 import { getLanguageByExtension } from '../lib/languages';
 import { useToast } from './useToast';
 
@@ -290,6 +291,54 @@ export function useEditorStore() {
     }
   }, [tabs, settings.maxFileSize]);
 
+  const handleOpenRecentFile = useCallback(async (recentFile: RecentFile) => {
+    try {
+      if (!recentFile.handle) {
+        // No handle stored (e.g. opened via fallback) — fall back to file picker
+        await handleOpenFile();
+        return;
+      }
+
+      const result = await openRecentFile(recentFile, settings.maxFileSize);
+      if (!result) {
+        // Permission denied or cancelled — fall back to file picker
+        await handleOpenFile();
+        return;
+      }
+
+      // Use isSameEntry() for reliable identity comparison across directories.
+      // Also match modified tabs so we focus the existing tab rather than
+      // opening a silent second copy of the same file.
+      let existingTab: TabWithHandle | undefined;
+      if (result.handle.handle) {
+        for (const t of tabs) {
+          if (t.fileHandle?.handle) {
+            const same = await t.fileHandle.handle.isSameEntry(result.handle.handle);
+            if (same) {
+              existingTab = t;
+              break;
+            }
+          }
+        }
+      }
+
+      if (existingTab) {
+        setActiveTabId(existingTab.id);
+        return;
+      }
+
+      const newTab: TabWithHandle = {
+        ...createNewTab(result.handle.name, result.content),
+        fileHandle: result.handle,
+      };
+
+      setTabs((prev) => [...prev, newTab]);
+      setActiveTabId(newTab.id);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to open recent file', 'error');
+    }
+  }, [tabs, settings.maxFileSize, handleOpenFile, showToast]);
+
   const handleSaveFile = useCallback(async (tabId?: string) => {
     const targetId = tabId || activeTabId;
     if (!targetId) return;
@@ -390,6 +439,7 @@ export function useEditorStore() {
     updateSettings,
     handleOpenFile,
     handleOpenFiles,
+    handleOpenRecentFile,
     handleSaveFile,
     handleSaveFileAs,
     reorderTabs,

@@ -1,9 +1,12 @@
-import { addRecentFile } from './db';
+import { addRecentFile, type RecentFile } from './db';
 
 declare global {
   interface Window {
     showOpenFilePicker?: (options?: OpenFilePickerOptions) => Promise<FileSystemFileHandle[]>;
     showSaveFilePicker?: (options?: SaveFilePickerOptions) => Promise<FileSystemFileHandle>;
+  }
+  interface FileSystemFileHandle {
+    requestPermission(descriptor?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
   }
 }
 
@@ -81,6 +84,7 @@ export async function openFile(maxFileSizeMB: number = 100): Promise<{ content: 
         path: fileHandle.name,
         name: fileHandle.name,
         lastOpened: Date.now(),
+        handle: fileHandle,
       });
 
       return {
@@ -124,6 +128,7 @@ export async function openFiles(maxFileSizeMB: number = 100): Promise<{ results:
             path: fileHandle.name,
             name: fileHandle.name,
             lastOpened: Date.now(),
+            handle: fileHandle,
           });
 
           return {
@@ -244,6 +249,7 @@ export async function saveFileAs(
         path: fileHandle.name,
         name: fileHandle.name,
         lastOpened: Date.now(),
+        handle: fileHandle,
       });
 
       return {
@@ -264,6 +270,48 @@ export async function saveFileAs(
       name: suggestedName || 'untitled.txt',
       path: suggestedName || 'untitled.txt',
     };
+  }
+}
+
+export async function openRecentFile(
+  recentFile: RecentFile,
+  maxFileSizeMB: number = 100
+): Promise<{ content: string; handle: FileHandle } | null> {
+  if (!recentFile.handle) return null;
+
+  try {
+    const permission = await recentFile.handle.requestPermission({ mode: 'read' });
+    if (permission !== 'granted') return null;
+
+    const file = await recentFile.handle.getFile();
+
+    const maxFileSizeBytes = maxFileSizeMB * 1024 * 1024;
+    if (file.size > maxFileSizeBytes) {
+      throw new Error(`File "${file.name}" is too large. Maximum size is ${maxFileSizeMB}MB.`);
+    }
+
+    const content = await file.text();
+
+    await addRecentFile({
+      path: recentFile.path,
+      name: recentFile.name,
+      lastOpened: Date.now(),
+      handle: recentFile.handle,
+    });
+
+    return {
+      content,
+      handle: {
+        handle: recentFile.handle,
+        name: file.name,
+        path: file.name,
+      },
+    };
+  } catch (err) {
+    if ((err as Error).name === 'AbortError' || (err as Error).name === 'NotAllowedError') {
+      return null;
+    }
+    throw err;
   }
 }
 

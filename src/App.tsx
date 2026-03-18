@@ -1,21 +1,21 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { redo, undo } from '@codemirror/commands';
 import { EditorView } from '@codemirror/view';
-import { undo, redo } from '@codemirror/commands';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AboutModal } from './components/AboutModal';
+import { CommandPalette } from './components/CommandPalette';
 import { Editor } from './components/Editor';
-import { TabBar } from './components/TabBar';
-import { MenuBar } from './components/MenuBar';
-import { StatusBar } from './components/StatusBar';
 import { FindReplace } from './components/FindReplace';
+import { GoToLineModal } from './components/GoToLineModal';
+import { MenuBar } from './components/MenuBar';
 import { SettingsModal } from './components/SettingsModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
-import { AboutModal } from './components/AboutModal';
-import { GoToLineModal } from './components/GoToLineModal';
-import { CommandPalette } from './components/CommandPalette';
+import { StatusBar } from './components/StatusBar';
+import { TabBar } from './components/TabBar';
 import { UpdateNotification } from './components/UpdateNotification';
 import { useEditorStore } from './hooks/useEditorStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { usePWA } from './hooks/usePWA';
-import { getRecentFiles, clearRecentFiles, type RecentFile } from './lib/db';
+import { clearRecentFiles, getRecentFiles, type RecentFile } from './lib/db';
 
 function App() {
   const {
@@ -34,6 +34,7 @@ function App() {
     updateTabCursor,
     updateSettings,
     handleOpenFile,
+    handleOpenRecentFile: openRecentFileFromStore,
     handleSaveFile,
     handleSaveFileAs,
     reorderTabs,
@@ -156,9 +157,12 @@ function App() {
     updateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' });
   }, [settings.theme, updateSettings]);
 
-  const handleOpenRecentFile = useCallback(async () => {
-    handleOpenFile();
-  }, [handleOpenFile]);
+  const handleOpenRecentFile = useCallback(async (file: RecentFile) => {
+    await openRecentFileFromStore(file);
+    getRecentFiles().then(setRecentFiles).catch((err) => {
+      console.error('Failed to refresh recent files:', err);
+    });
+  }, [openRecentFileFromStore]);
 
   const handleClearRecentFiles = useCallback(async () => {
     await clearRecentFiles();

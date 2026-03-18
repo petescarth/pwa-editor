@@ -34,6 +34,7 @@ interface RecentFile {
   path: string;
   name: string;
   lastOpened: number;
+  handle?: FileSystemFileHandle;
 }
 
 interface UnsavedRecovery {
