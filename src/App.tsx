@@ -3,6 +3,7 @@ import { EditorView } from '@codemirror/view';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AboutModal } from './components/AboutModal';
 import { CommandPalette } from './components/CommandPalette';
+import { ConfirmCloseModal } from './components/ConfirmCloseModal';
 import { Editor } from './components/Editor';
 import { FindReplace } from './components/FindReplace';
 import { GoToLineModal } from './components/GoToLineModal';
@@ -24,12 +25,16 @@ function App() {
     activeTabId,
     settings,
     isLoading,
+    pendingClose,
     setActiveTabId,
     createTab,
     closeTab,
     closeOtherTabs,
     closeAllTabs,
     closeTabsToRight,
+    confirmCloseSave,
+    confirmCloseDontSave,
+    confirmCloseCancel,
     updateTabContent,
     updateTabCursor,
     updateSettings,
@@ -407,6 +412,13 @@ function App() {
         isVisible={updateAvailable}
         onUpdate={applyUpdate}
         onDismiss={dismissUpdate}
+      />
+
+      <ConfirmCloseModal
+        pendingClose={pendingClose}
+        onSave={confirmCloseSave}
+        onDontSave={confirmCloseDontSave}
+        onCancel={confirmCloseCancel}
       />
     </div>
   );

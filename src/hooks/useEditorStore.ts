@@ -39,15 +39,40 @@ interface TabWithHandle extends TabState {
   fileHandle: FileHandle | null;
 }
 
+// Describes a deferred close action awaiting user confirmation.
+export interface PendingCloseAction {
+  type: 'single' | 'batch';
+  /** For 'single': the tab being closed */
+  tabId?: string;
+  filename?: string;
+  /** For 'batch': all tab IDs to close (may be filtered down to modified ones) */
+  tabIds?: string[];
+  modifiedCount?: number;
+  /** Callback that performs the actual close after confirmation */
+  executeClose: () => void;
+}
+
 export function useEditorStore() {
   const { showToast } = useToast();
   const [tabs, setTabs] = useState<TabWithHandle[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [settings, setSettings] = useState<EditorSettings>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
+  const [pendingClose, setPendingClose] = useState<PendingCloseAction | null>(null);
+
   const recoveryIntervalRef = useRef<number | null>(null);
+  const autoSaveIntervalRef = useRef<number | null>(null);
+
+  // Keep a ref to tabs so interval callbacks always see the latest value
+  const tabsRef = useRef<TabWithHandle[]>([]);
+  tabsRef.current = tabs;
+
+  const settingsRef = useRef<EditorSettings>(DEFAULT_SETTINGS);
+  settingsRef.current = settings;
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
+
+  // ── Initial State Load ────────────────────────────────────────────────────
 
   useEffect(() => {
     async function loadInitialState() {
@@ -95,6 +120,8 @@ export function useEditorStore() {
     loadInitialState();
   }, []);
 
+  // ── Session Persistence ───────────────────────────────────────────────────
+
   useEffect(() => {
     if (isLoading) return;
 
@@ -107,13 +134,15 @@ export function useEditorStore() {
     saveSession(session);
   }, [tabs, activeTabId, isLoading]);
 
+  // ── Crash Recovery Interval (IndexedDB, every 10 s) ───────────────────────
+
   useEffect(() => {
     if (recoveryIntervalRef.current) {
       clearInterval(recoveryIntervalRef.current);
     }
 
     recoveryIntervalRef.current = window.setInterval(() => {
-      tabs.forEach((tab) => {
+      tabsRef.current.forEach((tab) => {
         if (tab.isModified) {
           saveRecoveryData({
             tabId: tab.id,
@@ -130,7 +159,60 @@ export function useEditorStore() {
         clearInterval(recoveryIntervalRef.current);
       }
     };
-  }, [tabs]);
+  }, []);
+
+  // ── Auto-Save Interval ────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (autoSaveIntervalRef.current) {
+      clearInterval(autoSaveIntervalRef.current);
+      autoSaveIntervalRef.current = null;
+    }
+
+    if (!settings.autoSave) return;
+
+    autoSaveIntervalRef.current = window.setInterval(async () => {
+      const currentTabs = tabsRef.current;
+      for (const tab of currentTabs) {
+        if (tab.isModified && tab.fileHandle) {
+          try {
+            const handle = await saveFile(tab.content, tab.fileHandle);
+            if (handle) {
+              setTabs((prev) =>
+                prev.map((t) =>
+                  t.id === tab.id ? { ...t, isModified: false } : t
+                )
+              );
+              clearRecoveryData(tab.id);
+            }
+          } catch (err) {
+            console.error(`Auto-save failed for "${tab.filename}":`, err);
+          }
+        }
+      }
+    }, settings.autoSaveInterval);
+
+    return () => {
+      if (autoSaveIntervalRef.current) {
+        clearInterval(autoSaveIntervalRef.current);
+        autoSaveIntervalRef.current = null;
+      }
+    };
+  }, [settings.autoSave, settings.autoSaveInterval]);
+
+  // ── beforeunload Warning ──────────────────────────────────────────────────
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (tabsRef.current.some((t) => t.isModified)) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
+
+  // ── Settings ──────────────────────────────────────────────────────────────
 
   const updateSettings = useCallback(async (newSettings: Partial<EditorSettings>) => {
     setSettings((prev) => {
@@ -140,6 +222,8 @@ export function useEditorStore() {
     });
   }, []);
 
+  // ── Tab Creation ──────────────────────────────────────────────────────────
+
   const createTab = useCallback((filename = 'untitled.txt', content = '') => {
     const newTab: TabWithHandle = { ...createNewTab(filename, content), fileHandle: null };
     setTabs((prev) => [...prev, newTab]);
@@ -147,7 +231,10 @@ export function useEditorStore() {
     return newTab.id;
   }, []);
 
-  const closeTab = useCallback((tabId: string) => {
+  // ── Internal helpers ──────────────────────────────────────────────────────
+
+  /** Actually remove a tab from state without any guards. */
+  const _removeTab = useCallback((tabId: string) => {
     setTabs((prev) => {
       const index = prev.findIndex((t) => t.id === tabId);
       if (index === -1) return prev;
@@ -167,51 +254,237 @@ export function useEditorStore() {
 
       return newTabs;
     });
-
     clearRecoveryData(tabId);
   }, [activeTabId]);
 
-  const closeOtherTabs = useCallback((tabId: string) => {
+  /** Actually remove multiple tabs from state without any guards. */
+  const _removeTabs = useCallback((tabIds: string[]) => {
     setTabs((prev) => {
-      const tab = prev.find((t) => t.id === tabId);
-      if (!tab) return prev;
+      const idSet = new Set(tabIds);
+      const newTabs = prev.filter((t) => !idSet.has(t.id));
 
-      prev.forEach((t) => {
-        if (t.id !== tabId) {
-          clearRecoveryData(t.id);
-        }
-      });
+      if (newTabs.length === 0) {
+        const newTab: TabWithHandle = { ...createNewTab(), fileHandle: null };
+        setActiveTabId(newTab.id);
+        return [newTab];
+      }
 
-      return [tab];
-    });
-    setActiveTabId(tabId);
-  }, []);
-
-  const closeAllTabs = useCallback(() => {
-    clearRecoveryData();
-    const newTab: TabWithHandle = { ...createNewTab(), fileHandle: null };
-    setTabs([newTab]);
-    setActiveTabId(newTab.id);
-  }, []);
-
-  const closeTabsToRight = useCallback((tabId: string) => {
-    setTabs((prev) => {
-      const index = prev.findIndex((t) => t.id === tabId);
-      if (index === -1) return prev;
-
-      prev.slice(index + 1).forEach((t) => {
-        clearRecoveryData(t.id);
-      });
-
-      const newTabs = prev.slice(0, index + 1);
-
-      if (activeTabId && !newTabs.find((t) => t.id === activeTabId)) {
-        setActiveTabId(tabId);
+      if (activeTabId && idSet.has(activeTabId)) {
+        setActiveTabId(newTabs[0].id);
       }
 
       return newTabs;
     });
+    tabIds.forEach((id) => clearRecoveryData(id));
   }, [activeTabId]);
+
+  // ── Close Tab (with confirmation if modified) ─────────────────────────────
+
+  const closeTab = useCallback((tabId: string) => {
+    const currentTabs = tabsRef.current;
+    const tab = currentTabs.find((t) => t.id === tabId);
+    if (!tab) return;
+
+    const canAutoSave = settingsRef.current.autoSave && tab.fileHandle !== null;
+
+    if (!tab.isModified || canAutoSave) {
+      // If auto-save is on and file exists on disk, silently save then close
+      if (canAutoSave && tab.isModified) {
+        saveFile(tab.content, tab.fileHandle).then((handle) => {
+          if (handle) {
+            setTabs((prev) =>
+              prev.map((t) => (t.id === tabId ? { ...t, isModified: false } : t))
+            );
+          }
+          _removeTab(tabId);
+        }).catch(() => _removeTab(tabId));
+        return;
+      }
+      _removeTab(tabId);
+      return;
+    }
+
+    // Modified + no auto-save: show confirmation dialog
+    setPendingClose({
+      type: 'single',
+      tabId,
+      filename: tab.filename,
+      executeClose: () => _removeTab(tabId),
+    });
+  }, [_removeTab]);
+
+  /**
+   * Confirm save from the pending-close dialog (single tab).
+   * Triggers save, then closes.
+   */
+  const confirmCloseSave = useCallback(async () => {
+    if (!pendingClose) return;
+
+    if (pendingClose.type === 'single' && pendingClose.tabId) {
+      const tabId = pendingClose.tabId;
+      const tab = tabsRef.current.find((t) => t.id === tabId);
+      setPendingClose(null);
+      if (tab) {
+        const handle = await saveFile(tab.content, tab.fileHandle);
+        if (handle) {
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.id === tabId
+                ? { ...t, fileHandle: handle, filename: handle.name, isModified: false }
+                : t
+            )
+          );
+          clearRecoveryData(tabId);
+        }
+        // Close even if save was cancelled (AbortError)
+      }
+      _removeTab(tabId);
+    } else if (pendingClose.type === 'batch' && pendingClose.tabIds) {
+      const tabIds = pendingClose.tabIds;
+      setPendingClose(null);
+      // Save all modified tabs that have handles; for those without, just close
+      const currentTabs = tabsRef.current;
+      await Promise.all(
+        tabIds.map(async (tabId) => {
+          const tab = currentTabs.find((t) => t.id === tabId);
+          if (tab?.isModified) {
+            try {
+              const handle = await saveFile(tab.content, tab.fileHandle);
+              if (handle) {
+                setTabs((prev) =>
+                  prev.map((t) =>
+                    t.id === tabId
+                      ? { ...t, fileHandle: handle, filename: handle.name, isModified: false }
+                      : t
+                  )
+                );
+                clearRecoveryData(tabId);
+              }
+            } catch {
+              // ignore individual save errors
+            }
+          }
+        })
+      );
+      _removeTabs(tabIds);
+    }
+  }, [pendingClose, _removeTab, _removeTabs]);
+
+  const confirmCloseDontSave = useCallback(() => {
+    if (!pendingClose) return;
+    const execute = pendingClose.executeClose;
+    setPendingClose(null);
+    execute();
+  }, [pendingClose]);
+
+  const confirmCloseCancel = useCallback(() => {
+    setPendingClose(null);
+  }, []);
+
+  // ── Close Other/All/To-Right ──────────────────────────────────────────────
+
+  const closeOtherTabs = useCallback((tabId: string) => {
+    const currentTabs = tabsRef.current;
+    const tabsToClose = currentTabs.filter((t) => t.id !== tabId);
+    const modifiedUnsaved = tabsToClose.filter(
+      (t) => t.isModified && !(settingsRef.current.autoSave && t.fileHandle)
+    );
+
+    const executeClose = () => {
+      // Auto-save those that qualify
+      const autoSavable = tabsToClose.filter(
+        (t) => t.isModified && settingsRef.current.autoSave && t.fileHandle
+      );
+      Promise.all(
+        autoSavable.map((t) =>
+          saveFile(t.content, t.fileHandle).catch(() => null)
+        )
+      );
+      setTabs((prev) => {
+        const tab = prev.find((t) => t.id === tabId);
+        if (!tab) return prev;
+        prev.forEach((t) => {
+          if (t.id !== tabId) clearRecoveryData(t.id);
+        });
+        return [tab];
+      });
+      setActiveTabId(tabId);
+    };
+
+    if (modifiedUnsaved.length === 0) {
+      executeClose();
+      return;
+    }
+
+    setPendingClose({
+      type: 'batch',
+      tabIds: tabsToClose.map((t) => t.id),
+      modifiedCount: modifiedUnsaved.length,
+      executeClose,
+    });
+  }, []);
+
+  const closeAllTabs = useCallback(() => {
+    const currentTabs = tabsRef.current;
+    const modifiedUnsaved = currentTabs.filter(
+      (t) => t.isModified && !(settingsRef.current.autoSave && t.fileHandle)
+    );
+
+    const executeClose = () => {
+      clearRecoveryData();
+      const newTab: TabWithHandle = { ...createNewTab(), fileHandle: null };
+      setTabs([newTab]);
+      setActiveTabId(newTab.id);
+    };
+
+    if (modifiedUnsaved.length === 0) {
+      executeClose();
+      return;
+    }
+
+    setPendingClose({
+      type: 'batch',
+      tabIds: currentTabs.map((t) => t.id),
+      modifiedCount: modifiedUnsaved.length,
+      executeClose,
+    });
+  }, []);
+
+  const closeTabsToRight = useCallback((tabId: string) => {
+    const currentTabs = tabsRef.current;
+    const index = currentTabs.findIndex((t) => t.id === tabId);
+    if (index === -1) return;
+
+    const tabsToClose = currentTabs.slice(index + 1);
+    const modifiedUnsaved = tabsToClose.filter(
+      (t) => t.isModified && !(settingsRef.current.autoSave && t.fileHandle)
+    );
+
+    const executeClose = () => {
+      tabsToClose.forEach((t) => clearRecoveryData(t.id));
+      setTabs((prev) => {
+        const newTabs = prev.slice(0, index + 1);
+        if (activeTabId && !newTabs.find((t) => t.id === activeTabId)) {
+          setActiveTabId(tabId);
+        }
+        return newTabs;
+      });
+    };
+
+    if (modifiedUnsaved.length === 0) {
+      executeClose();
+      return;
+    }
+
+    setPendingClose({
+      type: 'batch',
+      tabIds: tabsToClose.map((t) => t.id),
+      modifiedCount: modifiedUnsaved.length,
+      executeClose,
+    });
+  }, [activeTabId]);
+
+  // ── Tab Content / Cursor ──────────────────────────────────────────────────
 
   const updateTabContent = useCallback((tabId: string, content: string) => {
     setTabs((prev) =>
@@ -230,6 +503,8 @@ export function useEditorStore() {
       )
     );
   }, []);
+
+  // ── File Operations ───────────────────────────────────────────────────────
 
   const handleOpenFile = useCallback(async () => {
     try {
@@ -255,7 +530,7 @@ export function useEditorStore() {
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Failed to open file', 'error');
     }
-  }, [tabs, settings.maxFileSize]);
+  }, [tabs, settings.maxFileSize, showToast]);
 
   const handleOpenFiles = useCallback(async () => {
     try {
@@ -265,7 +540,7 @@ export function useEditorStore() {
         showToast('Some files were skipped:\n' + skipped.join('\n'), 'warning');
       }
 
-      if (results.length === 0) return; // nothing to open (all skipped or cancelled)
+      if (results.length === 0) return;
 
       const newTabs: TabWithHandle[] = [];
 
@@ -289,26 +564,21 @@ export function useEditorStore() {
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Failed to open files', 'error');
     }
-  }, [tabs, settings.maxFileSize]);
+  }, [tabs, settings.maxFileSize, showToast]);
 
   const handleOpenRecentFile = useCallback(async (recentFile: RecentFile) => {
     try {
       if (!recentFile.handle) {
-        // No handle stored (e.g. opened via fallback) — fall back to file picker
         await handleOpenFile();
         return;
       }
 
       const result = await openRecentFile(recentFile, settings.maxFileSize);
       if (!result) {
-        // Permission denied or cancelled — fall back to file picker
         await handleOpenFile();
         return;
       }
 
-      // Use isSameEntry() for reliable identity comparison across directories.
-      // Also match modified tabs so we focus the existing tab rather than
-      // opening a silent second copy of the same file.
       let existingTab: TabWithHandle | undefined;
       if (result.handle.handle) {
         for (const t of tabs) {
@@ -393,6 +663,8 @@ export function useEditorStore() {
     clearRecoveryData(targetId);
   }, [activeTabId, tabs]);
 
+  // ── Tab Ordering / Navigation ─────────────────────────────────────────────
+
   const reorderTabs = useCallback((fromIndex: number, toIndex: number) => {
     setTabs((prev) => {
       const newTabs = [...prev];
@@ -428,12 +700,16 @@ export function useEditorStore() {
     activeTabId,
     settings,
     isLoading,
+    pendingClose,
     setActiveTabId,
     createTab,
     closeTab,
     closeOtherTabs,
     closeAllTabs,
     closeTabsToRight,
+    confirmCloseSave,
+    confirmCloseDontSave,
+    confirmCloseCancel,
     updateTabContent,
     updateTabCursor,
     updateSettings,
