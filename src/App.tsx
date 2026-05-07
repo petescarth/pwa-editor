@@ -39,6 +39,7 @@ function App() {
     updateTabCursor,
     updateSettings,
     handleOpenFile: openFileFromStore,
+    handleOpenFileHandle,
     handleOpenRecentFile: openRecentFileFromStore,
     handleSaveFile,
     handleSaveFileAs: saveFileAsFromStore,
@@ -64,6 +65,18 @@ function App() {
   useEffect(() => {
     getRecentFiles().then(setRecentFiles);
   }, []);
+
+  useEffect(() => {
+    if ('launchQueue' in window) {
+      (window as any).launchQueue.setConsumer((launchParams: any) => {
+        if (launchParams.files && launchParams.files.length > 0) {
+          for (const fileHandle of launchParams.files) {
+            handleOpenFileHandle(fileHandle);
+          }
+        }
+      });
+    }
+  }, [handleOpenFileHandle]);
 
   const refreshRecentFiles = useCallback(() => {
     getRecentFiles().then(setRecentFiles).catch((err) => {

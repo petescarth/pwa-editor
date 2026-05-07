@@ -36,6 +36,32 @@ export default defineConfig({
             type: 'image/png',
             purpose: 'maskable'
           }
+        ],
+        file_handlers: [
+          {
+            action: '/pwa-editor/',
+            accept: {
+              'text/plain': ['.txt', '.text', '.log', '.cfg', '.ini', '.env'],
+              'text/javascript': ['.js', '.mjs', '.cjs'],
+              'text/typescript': ['.ts', '.mts', '.cts'],
+              'text/jsx': ['.jsx'],
+              'text/tsx': ['.tsx'],
+              'text/x-python': ['.py', '.pyw', '.pyi'],
+              'text/html': ['.html', '.htm'],
+              'text/css': ['.css'],
+              'application/json': ['.json', '.jsonc'],
+              'text/markdown': ['.md', '.markdown'],
+              'text/x-sql': ['.sql'],
+              'text/yaml': ['.yaml', '.yml'],
+              'text/xml': ['.xml', '.svg', '.xsd', '.xsl'],
+              'text/x-rust': ['.rs'],
+              'text/x-c++src': ['.cpp', '.cc', '.cxx', '.hpp', '.h'],
+              'text/x-csrc': ['.c'],
+              'text/x-go': ['.go'],
+              'text/x-sh': ['.sh', '.bash', '.zsh'],
+              'text/x-toml': ['.toml']
+            }
+          }
         ]
       },
       workbox: {

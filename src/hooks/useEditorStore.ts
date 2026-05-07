@@ -566,6 +566,35 @@ export function useEditorStore() {
     }
   }, [tabs, settings.maxFileSize, showToast]);
 
+  const handleOpenFileHandle = useCallback(async (fileHandle: FileSystemFileHandle) => {
+    try {
+      const file = await fileHandle.getFile();
+      const maxFileSizeBytes = settings.maxFileSize * 1024 * 1024;
+      if (file.size > maxFileSizeBytes) {
+        showToast(`File "${file.name}" is too large. Maximum size is ${settings.maxFileSize}MB.`, 'error');
+        return;
+      }
+      const content = await file.text();
+
+      const existingTab = tabs.find(
+        (t) => t.filename === fileHandle.name && !t.isModified
+      );
+      if (existingTab) {
+        setActiveTabId(existingTab.id);
+        return;
+      }
+
+      const newTab: TabWithHandle = {
+        ...createNewTab(fileHandle.name, content),
+        fileHandle: { handle: fileHandle, name: fileHandle.name, path: fileHandle.name },
+      };
+      setTabs((prev) => [...prev, newTab]);
+      setActiveTabId(newTab.id);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to open file', 'error');
+    }
+  }, [tabs, settings.maxFileSize, showToast]);
+
   const handleOpenRecentFile = useCallback(async (recentFile: RecentFile) => {
     try {
       if (!recentFile.handle) {
@@ -715,6 +744,7 @@ export function useEditorStore() {
     updateSettings,
     handleOpenFile,
     handleOpenFiles,
+    handleOpenFileHandle,
     handleOpenRecentFile,
     handleSaveFile,
     handleSaveFileAs,
