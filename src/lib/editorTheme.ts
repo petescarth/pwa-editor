@@ -30,7 +30,10 @@ const darkEditorTheme = EditorView.theme({
   '.cm-cursor, .cm-dropCursor': {
     borderLeftColor: darkCursor,
   },
-  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground': {
+    backgroundColor: darkSelection,
+  },
+  '.cm-content ::selection': {
     backgroundColor: darkSelection,
   },
   '.cm-panels': {
@@ -109,7 +112,10 @@ const lightEditorTheme = EditorView.theme({
   '.cm-cursor, .cm-dropCursor': {
     borderLeftColor: lightCursor,
   },
-  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground': {
+    backgroundColor: lightSelection,
+  },
+  '.cm-content ::selection': {
     backgroundColor: lightSelection,
   },
   '.cm-panels': {

@@ -6,7 +6,6 @@ import {
   lineNumbers,
   highlightActiveLineGutter,
   highlightSpecialChars,
-  drawSelection,
   dropCursor,
   rectangularSelection,
   crosshairCursor,
@@ -47,7 +46,6 @@ export function Editor({
     const extensions: Extension[] = [
       highlightSpecialChars(),
       history(),
-      drawSelection(),
       dropCursor(),
       EditorState.allowMultipleSelections.of(true),
       indentOnInput(),
