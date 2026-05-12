@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RecentFile } from '../lib/db';
 import {
+  addRecentFile,
   clearRecoveryData,
   DEFAULT_SETTINGS,
   getRecoveryData,
@@ -16,6 +17,18 @@ import {
 import { openFile, openFiles, openRecentFile, saveFile, saveFileAs, type FileHandle } from '../lib/fileSystem';
 import { getLanguageByExtension } from '../lib/languages';
 import { useToast } from './useToast';
+
+const launchQueueBuffer: FileSystemFileHandle[] = [];
+let launchQueueReady = false;
+let launchQueueHandler: ((handle: FileSystemFileHandle) => void) | null = null;
+
+export function queueLaunchFile(fileHandle: FileSystemFileHandle) {
+  if (launchQueueReady && launchQueueHandler) {
+    launchQueueHandler(fileHandle);
+  } else {
+    launchQueueBuffer.push(fileHandle);
+  }
+}
 
 let tabIdCounter = 0;
 
@@ -119,6 +132,31 @@ export function useEditorStore() {
 
     loadInitialState();
   }, []);
+
+  // ── Launch Queue Processing (after load completes) ────────────────────────
+
+  const handleOpenFileHandleRef = useRef<(handle: FileSystemFileHandle) => void>(() => {});
+
+  // This ref is updated below once handleOpenFileHandle is defined.
+  // We use a second effect to flush the buffer and mark the queue as ready.
+  useEffect(() => {
+    if (isLoading) return;
+
+    // Flush any buffered file handles that arrived before loading finished
+    const buffered = launchQueueBuffer.splice(0);
+    for (const fh of buffered) {
+      handleOpenFileHandleRef.current(fh);
+    }
+
+    // Mark ready so future calls go directly to handler
+    launchQueueHandler = (fh) => handleOpenFileHandleRef.current(fh);
+    launchQueueReady = true;
+
+    return () => {
+      launchQueueReady = false;
+      launchQueueHandler = null;
+    };
+  }, [isLoading]);
 
   // ── Session Persistence ───────────────────────────────────────────────────
 
@@ -569,14 +607,15 @@ export function useEditorStore() {
   const handleOpenFileHandle = useCallback(async (fileHandle: FileSystemFileHandle) => {
     try {
       const file = await fileHandle.getFile();
-      const maxFileSizeBytes = settings.maxFileSize * 1024 * 1024;
+      const maxFileSizeBytes = settingsRef.current.maxFileSize * 1024 * 1024;
       if (file.size > maxFileSizeBytes) {
-        showToast(`File "${file.name}" is too large. Maximum size is ${settings.maxFileSize}MB.`, 'error');
+        showToast(`File "${file.name}" is too large. Maximum size is ${settingsRef.current.maxFileSize}MB.`, 'error');
         return;
       }
       const content = await file.text();
 
-      const existingTab = tabs.find(
+      const currentTabs = tabsRef.current;
+      const existingTab = currentTabs.find(
         (t) => t.filename === fileHandle.name && !t.isModified
       );
       if (existingTab) {
@@ -584,16 +623,33 @@ export function useEditorStore() {
         return;
       }
 
+      const fileHandleObj: FileHandle = { handle: fileHandle, name: fileHandle.name, path: fileHandle.name };
       const newTab: TabWithHandle = {
         ...createNewTab(fileHandle.name, content),
-        fileHandle: { handle: fileHandle, name: fileHandle.name, path: fileHandle.name },
+        fileHandle: fileHandleObj,
       };
-      setTabs((prev) => [...prev, newTab]);
+
+      // Replace empty untitled tab if it's the only one
+      const onlyTab = currentTabs.length === 1 ? currentTabs[0] : null;
+      if (onlyTab && onlyTab.filename === 'untitled.txt' && !onlyTab.isModified && onlyTab.content === '') {
+        setTabs([newTab]);
+      } else {
+        setTabs((prev) => [...prev, newTab]);
+      }
       setActiveTabId(newTab.id);
+
+      await addRecentFile({
+        path: fileHandle.name,
+        name: fileHandle.name,
+        lastOpened: Date.now(),
+        handle: fileHandle,
+      });
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Failed to open file', 'error');
     }
-  }, [tabs, settings.maxFileSize, showToast]);
+  }, [showToast]);
+
+  handleOpenFileHandleRef.current = handleOpenFileHandle;
 
   const handleOpenRecentFile = useCallback(async (recentFile: RecentFile) => {
     try {

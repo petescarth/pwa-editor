@@ -13,7 +13,7 @@ import { ShortcutsModal } from './components/ShortcutsModal';
 import { StatusBar } from './components/StatusBar';
 import { TabBar } from './components/TabBar';
 import { UpdateNotification } from './components/UpdateNotification';
-import { useEditorStore } from './hooks/useEditorStore';
+import { queueLaunchFile, useEditorStore } from './hooks/useEditorStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { usePWA } from './hooks/usePWA';
 import { clearRecentFiles, getRecentFiles, type RecentFile } from './lib/db';
@@ -39,7 +39,6 @@ function App() {
     updateTabCursor,
     updateSettings,
     handleOpenFile: openFileFromStore,
-    handleOpenFileHandle,
     handleOpenRecentFile: openRecentFileFromStore,
     handleSaveFile,
     handleSaveFileAs: saveFileAsFromStore,
@@ -71,12 +70,12 @@ function App() {
       (window as any).launchQueue.setConsumer((launchParams: any) => {
         if (launchParams.files && launchParams.files.length > 0) {
           for (const fileHandle of launchParams.files) {
-            handleOpenFileHandle(fileHandle);
+            queueLaunchFile(fileHandle);
           }
         }
       });
     }
-  }, [handleOpenFileHandle]);
+  }, []);
 
   const refreshRecentFiles = useCallback(() => {
     getRecentFiles().then(setRecentFiles).catch((err) => {
