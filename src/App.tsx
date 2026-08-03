@@ -37,6 +37,7 @@ function App() {
     confirmCloseCancel,
     updateTabContent,
     updateTabCursor,
+    renameTab,
     updateSettings,
     handleOpenFile: openFileFromStore,
     handleOpenRecentFile: openRecentFileFromStore,
@@ -379,6 +380,7 @@ function App() {
           id: t.id,
           filename: t.filename,
           isModified: t.isModified,
+          isUnsaved: t.fileHandle === null,
         }))}
         activeTabId={activeTabId}
         onSelectTab={setActiveTabId}
@@ -387,6 +389,7 @@ function App() {
         onCloseAll={closeAllTabs}
         onCloseToRight={closeTabsToRight}
         onReorderTabs={reorderTabs}
+        onRenameTab={renameTab}
       />
 
       <FindReplace

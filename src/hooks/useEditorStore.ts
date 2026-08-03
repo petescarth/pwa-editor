@@ -542,6 +542,18 @@ export function useEditorStore() {
     );
   }, []);
 
+  const renameTab = useCallback((tabId: string, filename: string) => {
+    setTabs((prev) =>
+      prev.map((tab) => {
+        if (tab.id === tabId) {
+          const language = getLanguageByExtension(filename).name;
+          return { ...tab, filename, language, isModified: true };
+        }
+        return tab;
+      })
+    );
+  }, []);
+
   // ── File Operations ───────────────────────────────────────────────────────
 
   const handleOpenFile = useCallback(async () => {
@@ -797,6 +809,7 @@ export function useEditorStore() {
     confirmCloseCancel,
     updateTabContent,
     updateTabCursor,
+    renameTab,
     updateSettings,
     handleOpenFile,
     handleOpenFiles,
