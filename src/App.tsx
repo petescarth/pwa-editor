@@ -59,6 +59,30 @@ function App() {
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
 
+  const isExtension = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+
+  useEffect(() => {
+    if (isExtension) {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('mode') === 'popup') {
+        document.body.style.width = '780px';
+        document.body.style.height = '580px';
+      }
+    }
+  }, [isExtension]);
+
+  const handlePopOutWindow = useCallback(() => {
+    if (isExtension) {
+      chrome.windows.create({ url: 'index.html', type: 'popup', width: 800, height: 600 });
+    }
+  }, [isExtension]);
+
+  const handleOpenInTab = useCallback(() => {
+    if (isExtension) {
+      chrome.tabs.create({ url: 'index.html' });
+    }
+  }, [isExtension]);
+
   const editorViewRef = useRef<EditorView | null>(null);
 
   useEffect(() => {
@@ -67,6 +91,7 @@ function App() {
 
   useEffect(() => {
     if ('launchQueue' in window) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).launchQueue.setConsumer((launchParams: any) => {
         if (launchParams.files && launchParams.files.length > 0) {
           for (const fileHandle of launchParams.files) {
@@ -344,6 +369,9 @@ function App() {
         lineNumbers={settings.lineNumbers}
         wordWrap={settings.wordWrap}
         theme={settings.theme}
+        isExtension={isExtension}
+        onPopOutWindow={handlePopOutWindow}
+        onOpenInTab={handleOpenInTab}
       />
 
       <TabBar

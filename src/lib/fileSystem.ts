@@ -99,7 +99,8 @@ export async function openFile(maxFileSizeMB: number = 100): Promise<{ content: 
       if ((err as Error).name === 'AbortError') {
         return null;
       }
-      throw err;
+      console.warn('File System Access API failed, falling back to input element:', err);
+      return openFileFallback(maxFileSizeMB);
     }
   } else {
     return openFileFallback(maxFileSizeMB);
@@ -155,7 +156,9 @@ export async function openFiles(maxFileSizeMB: number = 100): Promise<{ results:
       if ((err as Error).name === 'AbortError') {
         return { results: [], skipped: [] };
       }
-      throw err;
+      console.warn('File System Access API failed, falling back to input element:', err);
+      const result = await openFileFallback(maxFileSizeMB);
+      return { results: result ? [result] : [], skipped: [] };
     }
   } else {
     const result = await openFileFallback(maxFileSizeMB);
@@ -223,11 +226,21 @@ export async function saveFile(
       if ((err as Error).name === 'AbortError') {
         return null;
       }
-      throw err;
+      console.warn('File System Access API failed, falling back to download:', err);
+      return saveFileAsFallback(content, handle?.name);
     }
   } else {
-    return saveFileAs(content, handle?.name);
+    return saveFileAsFallback(content, handle?.name);
   }
+}
+
+function saveFileAsFallback(content: string, suggestedName?: string): FileHandle {
+  downloadFile(content, suggestedName || 'untitled.txt');
+  return {
+    handle: null,
+    name: suggestedName || 'untitled.txt',
+    path: suggestedName || 'untitled.txt',
+  };
 }
 
 export async function saveFileAs(
@@ -261,15 +274,11 @@ export async function saveFileAs(
       if ((err as Error).name === 'AbortError') {
         return null;
       }
-      throw err;
+      console.warn('File System Access API failed, falling back to download:', err);
+      return saveFileAsFallback(content, suggestedName);
     }
   } else {
-    downloadFile(content, suggestedName || 'untitled.txt');
-    return {
-      handle: null,
-      name: suggestedName || 'untitled.txt',
-      path: suggestedName || 'untitled.txt',
-    };
+    return saveFileAsFallback(content, suggestedName);
   }
 }
 

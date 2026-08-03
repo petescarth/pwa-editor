@@ -19,6 +19,7 @@ A powerful, offline-capable text editor built as a Progressive Web App. Features
 - **Auto-save**: Automatically persists your work to IndexedDB
 - **Keyboard Shortcuts**: Full keyboard navigation support
 - **Installable**: Install as a native-like app on desktop and mobile
+- **Chrome Extension**: Also available as a Chrome Extension with a toolbar popup, pop-out window, and new tab modes.
 
 ## Keyboard Shortcuts
 
@@ -59,12 +60,39 @@ npm run typecheck
 # Lint
 npm run lint
 
-# Build for production
+# Build for production (PWA)
 npm run build
+
+# Build for Chrome Extension
+npm run build:ext
 
 # Preview production build
 npm run preview
 ```
+
+## Chrome Extension
+
+You can build and use the editor as a Chrome Extension. The extension works perfectly offline and degrades gracefully when the native File System API is blocked in popup mode, utilizing traditional file inputs and downloads.
+
+### Building and Loading
+
+1. **Build the extension**:
+   ```bash
+   npm run build:ext
+   ```
+   This will output the extension files to the `dist-ext` directory.
+
+2. **Load into Chrome**:
+   - Open Chrome and navigate to `chrome://extensions/`
+   - Enable **Developer mode** in the top right corner
+   - Click **Load unpacked** in the top left
+   - Select the `dist-ext` folder from this project
+
+3. **Usage**:
+   - Click the extension icon in your toolbar to open the editor in a quick popup.
+   - Use the **Extension** menu within the editor to:
+     - **Pop Out to Window**: Opens the editor in a detached floating window.
+     - **Open in New Tab**: Opens the editor in a full browser tab for maximum space.
 
 ## Deploying to GitHub Pages
 

@@ -8,6 +8,7 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-ext
 dist-ssr
 *.local
 
@@ -21,3 +22,6 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+.kilo/
+

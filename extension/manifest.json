@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "PWA Editor",
+  "version": "1.0.0",
+  "description": "A powerful offline-capable text editor",
+  "action": {
+    "default_popup": "index.html?mode=popup",
+    "default_title": "Open Editor",
+    "default_icon": {
+      "16": "favicon-96x96.png",
+      "48": "favicon-96x96.png",
+      "128": "web-app-manifest-192x192.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "index.html?mode=sidepanel"
+  },
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "unlimitedStorage"
+  ],
+  "icons": {
+    "16": "favicon-96x96.png",
+    "48": "favicon-96x96.png",
+    "128": "web-app-manifest-192x192.png"
+  }
+}

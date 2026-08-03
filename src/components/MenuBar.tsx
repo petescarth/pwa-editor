@@ -33,6 +33,9 @@ interface MenuBarProps {
   lineNumbers: boolean;
   wordWrap: boolean;
   theme: 'dark' | 'light';
+  isExtension?: boolean;
+  onPopOutWindow?: () => void;
+  onOpenInTab?: () => void;
 }
 
 interface MenuItem {
@@ -76,6 +79,9 @@ export function MenuBar({
   lineNumbers,
   wordWrap,
   theme,
+  isExtension,
+  onPopOutWindow,
+  onOpenInTab,
 }: MenuBarProps) {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
@@ -137,6 +143,13 @@ export function MenuBar({
       { label: 'About', action: onShowAbout },
     ],
   };
+
+  if (isExtension) {
+    menus.Extension = [
+      { label: 'Pop Out to Window', action: onPopOutWindow },
+      { label: 'Open in New Tab', action: onOpenInTab }
+    ];
+  }
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
