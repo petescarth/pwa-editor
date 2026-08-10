@@ -36,6 +36,7 @@ interface MenuBarProps {
   isExtension?: boolean;
   onPopOutWindow?: () => void;
   onOpenInTab?: () => void;
+  onOpenSidePanel?: () => void;
 }
 
 interface MenuItem {
@@ -82,6 +83,7 @@ export function MenuBar({
   isExtension,
   onPopOutWindow,
   onOpenInTab,
+  onOpenSidePanel,
 }: MenuBarProps) {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
@@ -147,7 +149,8 @@ export function MenuBar({
   if (isExtension) {
     menus.Extension = [
       { label: 'Pop Out to Window', action: onPopOutWindow },
-      { label: 'Open in New Tab', action: onOpenInTab }
+      { label: 'Open in New Tab', action: onOpenInTab },
+      { label: 'Open in Side Panel', action: onOpenSidePanel }
     ];
   }
 

@@ -84,6 +84,17 @@ function App() {
     }
   }, [isExtension]);
 
+  const handleOpenSidePanel = useCallback(() => {
+    if (isExtension) {
+      chrome.windows.getLastFocused({ populate: false }, (window) => {
+        if (window.id) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (chrome as any).sidePanel.open({ windowId: window.id });
+        }
+      });
+    }
+  }, [isExtension]);
+
   const editorViewRef = useRef<EditorView | null>(null);
 
   useEffect(() => {
@@ -373,6 +384,7 @@ function App() {
         isExtension={isExtension}
         onPopOutWindow={handlePopOutWindow}
         onOpenInTab={handleOpenInTab}
+        onOpenSidePanel={handleOpenSidePanel}
       />
 
       <TabBar
