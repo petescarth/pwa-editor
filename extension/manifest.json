@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PWA Editor",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A powerful offline-capable text editor",
   "action": {
     "default_popup": "index.html?mode=popup",
@@ -16,9 +16,7 @@
     "default_path": "index.html?mode=sidepanel"
   },
   "permissions": [
-    "sidePanel",
-    "storage",
-    "unlimitedStorage"
+    "sidePanel"
   ],
   "icons": {
     "16": "favicon-96x96.png",
