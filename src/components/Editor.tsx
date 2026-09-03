@@ -40,6 +40,11 @@ export function Editor({
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const isUpdatingRef = useRef(false);
+  const onChangeRef = useRef(onChange);
+  const onCursorChangeRef = useRef(onCursorChange);
+
+  onChangeRef.current = onChange;
+  onCursorChangeRef.current = onCursorChange;
 
   const getExtensions = useCallback((): Extension[] => {
     const language = getLanguageByExtension(filename);
@@ -68,13 +73,14 @@ export function Editor({
         indentWithTab,
       ]),
       EditorView.updateListener.of((update) => {
-        if (update.docChanged && !isUpdatingRef.current) {
-          onChange(update.state.doc.toString());
+        if (isUpdatingRef.current) return;
+        if (update.docChanged) {
+          onChangeRef.current(update.state.doc.toString());
         }
         if (update.selectionSet) {
           const pos = update.state.selection.main.head;
           const line = update.state.doc.lineAt(pos);
-          onCursorChange(line.number, pos - line.from + 1);
+          onCursorChangeRef.current(line.number, pos - line.from + 1);
         }
       }),
       getEditorTheme(settings.theme === 'dark'),
@@ -109,7 +115,7 @@ export function Editor({
     extensions.push(foldGutter());
 
     return extensions;
-  }, [filename, settings, onChange, onCursorChange]);
+  }, [filename, settings]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -157,6 +163,7 @@ export function Editor({
     const view = viewRef.current;
     if (!view) return;
 
+    isUpdatingRef.current = true;
     const state = EditorState.create({
       doc: view.state.doc,
       extensions: getExtensions(),
@@ -164,6 +171,7 @@ export function Editor({
     });
 
     view.setState(state);
+    isUpdatingRef.current = false;
   }, [settings, filename, getExtensions]);
 
   return (

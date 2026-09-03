@@ -85,6 +85,80 @@ export function useEditorStore() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
 
+  // ── Disk Change Detection & Refresh ──────────────────────────────────────
+
+  const checkAndRefreshTab = useCallback(async (tabId: string) => {
+    const currentTabs = tabsRef.current;
+    const tab = currentTabs.find((t) => t.id === tabId);
+    if (!tab || !tab.fileHandle?.handle) return;
+
+    try {
+      const handle = tab.fileHandle.handle;
+      if ('queryPermission' in handle) {
+        const permission = await handle.queryPermission({ mode: 'read' });
+        if (permission !== 'granted') return;
+      }
+
+      const file = await handle.getFile();
+      const maxFileSizeBytes = settingsRef.current.maxFileSize * 1024 * 1024;
+      if (file.size > maxFileSizeBytes) return;
+
+      if (!tab.isModified) {
+        const diskContent = await file.text();
+        if (diskContent !== tab.content) {
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.id === tabId && !t.isModified
+                ? {
+                    ...t,
+                    content: diskContent,
+                    lastModifiedOnDisk: file.lastModified,
+                  }
+                : t
+            )
+          );
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to check disk changes for "${tab.filename}":`, err);
+    }
+  }, []);
+
+  const refreshTabsFromDisk = useCallback(async (tabsToCheck?: TabWithHandle[]) => {
+    const targetTabs = tabsToCheck || tabsRef.current;
+    for (const tab of targetTabs) {
+      if (tab.fileHandle?.handle && !tab.isModified) {
+        try {
+          const handle = tab.fileHandle.handle;
+          if ('queryPermission' in handle) {
+            const permission = await handle.queryPermission({ mode: 'read' });
+            if (permission !== 'granted') continue;
+          }
+          const file = await handle.getFile();
+          const maxFileSizeBytes = settingsRef.current.maxFileSize * 1024 * 1024;
+          if (file.size > maxFileSizeBytes) continue;
+
+          const diskContent = await file.text();
+          if (diskContent !== tab.content) {
+            setTabs((prev) =>
+              prev.map((t) =>
+                t.id === tab.id && !t.isModified
+                  ? {
+                      ...t,
+                      content: diskContent,
+                      lastModifiedOnDisk: file.lastModified,
+                    }
+                  : t
+              )
+            );
+          }
+        } catch (err) {
+          console.warn(`Failed to refresh "${tab.filename}" from disk:`, err);
+        }
+      }
+    }
+  }, []);
+
   // ── Initial State Load ────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -111,10 +185,12 @@ export function useEditorStore() {
         } else if (loadedSession && loadedSession.tabs.length > 0) {
           const restoredTabs: TabWithHandle[] = loadedSession.tabs.map((tab) => ({
             ...tab,
-            fileHandle: null,
+            fileHandle: tab.fileHandle || null,
           }));
           setTabs(restoredTabs);
-          setActiveTabId(loadedSession.activeTabId || restoredTabs[0].id);
+          const initialActiveId = loadedSession.activeTabId || restoredTabs[0].id;
+          setActiveTabId(initialActiveId);
+          refreshTabsFromDisk(restoredTabs);
         } else {
           const newTab = { ...createNewTab(), fileHandle: null };
           setTabs([newTab]);
@@ -131,7 +207,36 @@ export function useEditorStore() {
     }
 
     loadInitialState();
-  }, []);
+  }, [refreshTabsFromDisk]);
+
+  // ── Refresh Tab on Switch & Window Focus ──────────────────────────────────
+
+  useEffect(() => {
+    if (!activeTabId || isLoading) return;
+    checkAndRefreshTab(activeTabId);
+  }, [activeTabId, isLoading, checkAndRefreshTab]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (activeTabId) {
+        checkAndRefreshTab(activeTabId);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && activeTabId) {
+        checkAndRefreshTab(activeTabId);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [activeTabId, checkAndRefreshTab]);
 
   // ── Launch Queue Processing (after load completes) ────────────────────────
 
@@ -164,8 +269,7 @@ export function useEditorStore() {
     if (isLoading) return;
 
     const session: SessionState = {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      tabs: tabs.map(({ fileHandle, ...tab }) => tab),
+      tabs: tabs.map((tab) => ({ ...tab })),
       activeTabId,
       lastOpened: Date.now(),
     };
@@ -363,39 +467,33 @@ export function useEditorStore() {
       const tab = tabsRef.current.find((t) => t.id === tabId);
       setPendingClose(null);
       if (tab) {
-        const handle = await saveFile(tab.content, tab.fileHandle);
-        if (handle) {
-          setTabs((prev) =>
-            prev.map((t) =>
-              t.id === tabId
-                ? { ...t, fileHandle: handle, filename: handle.name, isModified: false }
-                : t
-            )
-          );
-          clearRecoveryData(tabId);
+        let handle: FileHandle | null = null;
+        if (!tab.fileHandle?.handle) {
+          handle = await saveFileAs(tab.content, tab.filename);
+        } else {
+          handle = await saveFile(tab.content, tab.fileHandle);
         }
-        // Close even if save was cancelled (AbortError)
+        if (handle) {
+          clearRecoveryData(tabId);
+          _removeTab(tabId);
+        }
       }
-      _removeTab(tabId);
     } else if (pendingClose.type === 'batch' && pendingClose.tabIds) {
       const tabIds = pendingClose.tabIds;
       setPendingClose(null);
-      // Save all modified tabs that have handles; for those without, just close
       const currentTabs = tabsRef.current;
       await Promise.all(
         tabIds.map(async (tabId) => {
           const tab = currentTabs.find((t) => t.id === tabId);
           if (tab?.isModified) {
             try {
-              const handle = await saveFile(tab.content, tab.fileHandle);
+              let handle: FileHandle | null = null;
+              if (!tab.fileHandle?.handle) {
+                handle = await saveFileAs(tab.content, tab.filename);
+              } else {
+                handle = await saveFile(tab.content, tab.fileHandle);
+              }
               if (handle) {
-                setTabs((prev) =>
-                  prev.map((t) =>
-                    t.id === tabId
-                      ? { ...t, fileHandle: handle, filename: handle.name, isModified: false }
-                      : t
-                  )
-                );
                 clearRecoveryData(tabId);
               }
             } catch {
@@ -706,42 +804,15 @@ export function useEditorStore() {
     }
   }, [tabs, settings.maxFileSize, handleOpenFile, showToast]);
 
-  const handleSaveFile = useCallback(async (tabId?: string) => {
-    const targetId = tabId || activeTabId;
-    if (!targetId) return;
-
-    const tab = tabs.find((t) => t.id === targetId);
-    if (!tab) return;
-
-    const handle = await saveFile(tab.content, tab.fileHandle);
-    if (!handle) return;
-
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.id === targetId
-          ? {
-              ...t,
-              fileHandle: handle,
-              filename: handle.name,
-              isModified: false,
-              language: getLanguageByExtension(handle.name).name,
-            }
-          : t
-      )
-    );
-
-    clearRecoveryData(targetId);
-  }, [activeTabId, tabs]);
-
   const handleSaveFileAs = useCallback(async (tabId?: string) => {
     const targetId = tabId || activeTabId;
-    if (!targetId) return;
+    if (!targetId) return null;
 
-    const tab = tabs.find((t) => t.id === targetId);
-    if (!tab) return;
+    const tab = tabsRef.current.find((t) => t.id === targetId);
+    if (!tab) return null;
 
     const handle = await saveFileAs(tab.content, tab.filename);
-    if (!handle) return;
+    if (!handle) return null;
 
     setTabs((prev) =>
       prev.map((t) =>
@@ -758,7 +829,41 @@ export function useEditorStore() {
     );
 
     clearRecoveryData(targetId);
-  }, [activeTabId, tabs]);
+    return handle;
+  }, [activeTabId]);
+
+  const handleSaveFile = useCallback(async (tabId?: string) => {
+    const targetId = tabId || activeTabId;
+    if (!targetId) return null;
+
+    const tab = tabsRef.current.find((t) => t.id === targetId);
+    if (!tab) return null;
+
+    // If file has no existing handle on disk, prompt with Save As
+    if (!tab.fileHandle?.handle) {
+      return handleSaveFileAs(targetId);
+    }
+
+    const handle = await saveFile(tab.content, tab.fileHandle);
+    if (!handle) return null;
+
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === targetId
+          ? {
+              ...t,
+              fileHandle: handle,
+              filename: handle.name,
+              isModified: false,
+              language: getLanguageByExtension(handle.name).name,
+            }
+          : t
+      )
+    );
+
+    clearRecoveryData(targetId);
+    return handle;
+  }, [activeTabId, handleSaveFileAs]);
 
   // ── Tab Ordering / Navigation ─────────────────────────────────────────────
 

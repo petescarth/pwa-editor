@@ -41,7 +41,7 @@ function App() {
     updateSettings,
     handleOpenFile: openFileFromStore,
     handleOpenRecentFile: openRecentFileFromStore,
-    handleSaveFile,
+    handleSaveFile: saveFileFromStore,
     handleSaveFileAs: saveFileAsFromStore,
     reorderTabs,
     switchToTab,
@@ -124,6 +124,11 @@ function App() {
     await openFileFromStore();
     refreshRecentFiles();
   }, [openFileFromStore, refreshRecentFiles]);
+
+  const handleSaveFile = useCallback(async (tabId?: string) => {
+    await saveFileFromStore(tabId);
+    refreshRecentFiles();
+  }, [saveFileFromStore, refreshRecentFiles]);
 
   const handleSaveFileAs = useCallback(async (tabId?: string) => {
     await saveFileAsFromStore(tabId);
@@ -392,7 +397,7 @@ function App() {
           id: t.id,
           filename: t.filename,
           isModified: t.isModified,
-          isUnsaved: t.fileHandle === null,
+          isUnsaved: t.fileHandle === null || t.fileHandle.handle === null,
         }))}
         activeTabId={activeTabId}
         onSelectTab={setActiveTabId}
@@ -414,6 +419,7 @@ function App() {
       <div className="flex-1 min-h-0">
         {activeTab && (
           <Editor
+            key={activeTab.id}
             content={activeTab.content}
             filename={activeTab.filename}
             settings={settings}

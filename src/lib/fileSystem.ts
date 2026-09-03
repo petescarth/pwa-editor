@@ -39,7 +39,7 @@ const FILE_TYPES: FilePickerAcceptType[] = [
     accept: {
       'text/plain': ['.txt', '.text', '.log'],
       'text/javascript': ['.js', '.mjs', '.cjs'],
-      'text/typescript': ['.ts', '.mts', '.cts'],
+      'application/typescript': ['.ts', '.mts', '.cts'],
       'text/jsx': ['.jsx'],
       'text/tsx': ['.tsx'],
       'text/x-python': ['.py', '.pyw', '.pyi'],
@@ -51,11 +51,10 @@ const FILE_TYPES: FilePickerAcceptType[] = [
       'text/yaml': ['.yaml', '.yml'],
       'text/xml': ['.xml', '.svg', '.xsd', '.xsl'],
       'text/x-rust': ['.rs'],
-      'text/x-c++src': ['.cpp', '.cc', '.cxx', '.hpp', '.h'],
-      'text/x-csrc': ['.c'],
+      'text/x-c': ['.cpp', '.cc', '.cxx', '.hpp', '.h', '.c'],
       'text/x-go': ['.go'],
       'text/x-sh': ['.sh', '.bash', '.zsh'],
-      'text/x-toml': ['.toml'],
+      'application/toml': ['.toml'],
     },
   },
 ];
@@ -221,6 +220,14 @@ export async function saveFile(
       const writable = await handle.handle.createWritable();
       await writable.write(content);
       await writable.close();
+
+      await addRecentFile({
+        path: handle.handle.name,
+        name: handle.handle.name,
+        lastOpened: Date.now(),
+        handle: handle.handle,
+      });
+
       return handle;
     } catch (err) {
       if ((err as Error).name === 'AbortError') {

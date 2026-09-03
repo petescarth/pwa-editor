@@ -22,6 +22,8 @@ interface TabState {
   scrollPosition: number;
   isModified: boolean;
   filePath?: string;
+  fileHandle?: { handle: FileSystemFileHandle | null; name: string; path: string } | null;
+  lastModifiedOnDisk?: number;
 }
 
 interface SessionState {
