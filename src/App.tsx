@@ -43,6 +43,7 @@ function App() {
     handleOpenRecentFile: openRecentFileFromStore,
     handleSaveFile: saveFileFromStore,
     handleSaveFileAs: saveFileAsFromStore,
+    regrantTabPermission,
     reorderTabs,
     switchToTab,
     switchToNextTab,
@@ -437,6 +438,8 @@ function App() {
         tabSize={settings.tabSize}
         insertSpaces={settings.insertSpaces}
         isOnline={isOnline}
+        permissionPending={activeTab?.permissionPending}
+        onRegrantPermission={activeTab ? () => regrantTabPermission(activeTab.id) : undefined}
       />
 
       <SettingsModal

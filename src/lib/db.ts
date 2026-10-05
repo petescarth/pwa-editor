@@ -11,6 +11,7 @@ interface EditorSettings {
   autoSaveInterval: number;
   theme: 'dark' | 'light';
   maxFileSize: number;
+  restorePreviousSession: boolean;
 }
 
 interface TabState {
@@ -108,12 +109,13 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   autoSaveInterval: 30000,
   theme: 'dark',
   maxFileSize: 100,
+  restorePreviousSession: true,
 };
 
 export async function getSettings(): Promise<EditorSettings> {
   const db = await getDB();
   const settings = await db.get('settings', 'user-settings');
-  return settings || DEFAULT_SETTINGS;
+  return settings ? { ...DEFAULT_SETTINGS, ...settings } : DEFAULT_SETTINGS;
 }
 
 export async function saveSettings(settings: EditorSettings): Promise<void> {

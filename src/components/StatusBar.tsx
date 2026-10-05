@@ -1,4 +1,4 @@
-import { Wifi, WifiOff } from 'lucide-react';
+import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
 
 interface StatusBarProps {
   line: number;
@@ -7,6 +7,8 @@ interface StatusBarProps {
   tabSize: number;
   insertSpaces: boolean;
   isOnline: boolean;
+  permissionPending?: boolean;
+  onRegrantPermission?: () => void;
 }
 
 export function StatusBar({
@@ -16,6 +18,8 @@ export function StatusBar({
   tabSize,
   insertSpaces,
   isOnline,
+  permissionPending,
+  onRegrantPermission,
 }: StatusBarProps) {
   return (
     <div className="flex items-center justify-between bg-[#007acc] text-white text-xs px-2 py-1">
@@ -23,6 +27,16 @@ export function StatusBar({
         <span>
           Ln {line}, Col {column}
         </span>
+        {permissionPending && onRegrantPermission && (
+          <button
+            onClick={onRegrantPermission}
+            className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white px-2 py-0.5 rounded transition-colors text-xs font-medium cursor-pointer"
+            title="File disk access expired. Click to grant permission and connect."
+          >
+            <RefreshCw className="w-3 h-3" />
+            <span>Reconnect to Disk</span>
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-4">

@@ -14,7 +14,17 @@ import {
   type SessionState,
   type TabState,
 } from '../lib/db';
-import { openFile, openFiles, openRecentFile, saveFile, saveFileAs, type FileHandle } from '../lib/fileSystem';
+import {
+  checkHandleReadPermission,
+  checkHandleWritePermission,
+  openFile,
+  openFiles,
+  openRecentFile,
+  saveFile,
+  saveFileAs,
+  verifyFileHandlePermission,
+  type FileHandle,
+} from '../lib/fileSystem';
 import { getLanguageByExtension } from '../lib/languages';
 import { useToast } from './useToast';
 
@@ -48,8 +58,9 @@ function createNewTab(filename = 'untitled.txt', content = ''): TabState {
   };
 }
 
-interface TabWithHandle extends TabState {
+export interface TabWithHandle extends TabState {
   fileHandle: FileHandle | null;
+  permissionPending?: boolean;
 }
 
 // Describes a deferred close action awaiting user confirmation.
@@ -79,6 +90,9 @@ export function useEditorStore() {
   // Keep a ref to tabs so interval callbacks always see the latest value
   const tabsRef = useRef<TabWithHandle[]>([]);
   tabsRef.current = tabs;
+
+  const activeTabIdRef = useRef<string | null>(null);
+  activeTabIdRef.current = activeTabId;
 
   const settingsRef = useRef<EditorSettings>(DEFAULT_SETTINGS);
   settingsRef.current = settings;
@@ -124,41 +138,6 @@ export function useEditorStore() {
     }
   }, []);
 
-  const refreshTabsFromDisk = useCallback(async (tabsToCheck?: TabWithHandle[]) => {
-    const targetTabs = tabsToCheck || tabsRef.current;
-    for (const tab of targetTabs) {
-      if (tab.fileHandle?.handle && !tab.isModified) {
-        try {
-          const handle = tab.fileHandle.handle;
-          if ('queryPermission' in handle) {
-            const permission = await handle.queryPermission({ mode: 'read' });
-            if (permission !== 'granted') continue;
-          }
-          const file = await handle.getFile();
-          const maxFileSizeBytes = settingsRef.current.maxFileSize * 1024 * 1024;
-          if (file.size > maxFileSizeBytes) continue;
-
-          const diskContent = await file.text();
-          if (diskContent !== tab.content) {
-            setTabs((prev) =>
-              prev.map((t) =>
-                t.id === tab.id && !t.isModified
-                  ? {
-                      ...t,
-                      content: diskContent,
-                      lastModifiedOnDisk: file.lastModified,
-                    }
-                  : t
-              )
-            );
-          }
-        } catch (err) {
-          console.warn(`Failed to refresh "${tab.filename}" from disk:`, err);
-        }
-      }
-    }
-  }, []);
-
   // ── Initial State Load ────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -172,33 +151,90 @@ export function useEditorStore() {
 
         setSettings(loadedSettings);
 
-        if (recoveryData.length > 0) {
-          const recoveredTabs = recoveryData.map((data) => ({
+        if (!loadedSettings.restorePreviousSession) {
+          await clearRecoveryData();
+          const newTab: TabWithHandle = { ...createNewTab(), fileHandle: null, permissionPending: false };
+          setTabs([newTab]);
+          setActiveTabId(newTab.id);
+          return;
+        }
+
+        if (loadedSession && loadedSession.tabs.length > 0) {
+          const recoveryMap = new Map(recoveryData.map((d) => [d.tabId, d]));
+          const restoredTabs: TabWithHandle[] = loadedSession.tabs.map((tab) => {
+            const recovery = recoveryMap.get(tab.id);
+            if (recovery) {
+              recoveryMap.delete(tab.id);
+              return {
+                ...tab,
+                content: recovery.content,
+                isModified: true,
+                fileHandle: tab.fileHandle || null,
+                permissionPending: false,
+              };
+            }
+            return {
+              ...tab,
+              fileHandle: tab.fileHandle || null,
+              permissionPending: false,
+            };
+          });
+
+          for (const remainingRecovery of recoveryMap.values()) {
+            restoredTabs.push({
+              ...createNewTab(remainingRecovery.filename, remainingRecovery.content),
+              id: remainingRecovery.tabId,
+              isModified: true,
+              fileHandle: null,
+              permissionPending: false,
+            });
+          }
+
+          setTabs(restoredTabs);
+          tabsRef.current = restoredTabs;
+          const initialActiveId = loadedSession.activeTabId || restoredTabs[0].id;
+          setActiveTabId(initialActiveId);
+          activeTabIdRef.current = initialActiveId;
+          await clearRecoveryData();
+
+          // Check permissions for tabs with handles
+          for (const tab of restoredTabs) {
+            if (tab.fileHandle?.handle) {
+              try {
+                const isGranted = await checkHandleReadPermission(tab.fileHandle.handle);
+                if (isGranted) {
+                  checkAndRefreshTab(tab.id);
+                } else {
+                  setTabs((prev) =>
+                    prev.map((t) =>
+                      t.id === tab.id ? { ...t, permissionPending: true } : t
+                    )
+                  );
+                }
+              } catch (err) {
+                console.warn(`Failed to check permission for tab "${tab.filename}":`, err);
+              }
+            }
+          }
+        } else if (recoveryData.length > 0) {
+          const recoveredTabs: TabWithHandle[] = recoveryData.map((data) => ({
             ...createNewTab(data.filename, data.content),
             id: data.tabId,
             isModified: true,
             fileHandle: null,
+            permissionPending: false,
           }));
           setTabs(recoveredTabs);
           setActiveTabId(recoveredTabs[0].id);
           await clearRecoveryData();
-        } else if (loadedSession && loadedSession.tabs.length > 0) {
-          const restoredTabs: TabWithHandle[] = loadedSession.tabs.map((tab) => ({
-            ...tab,
-            fileHandle: tab.fileHandle || null,
-          }));
-          setTabs(restoredTabs);
-          const initialActiveId = loadedSession.activeTabId || restoredTabs[0].id;
-          setActiveTabId(initialActiveId);
-          refreshTabsFromDisk(restoredTabs);
         } else {
-          const newTab = { ...createNewTab(), fileHandle: null };
+          const newTab: TabWithHandle = { ...createNewTab(), fileHandle: null, permissionPending: false };
           setTabs([newTab]);
           setActiveTabId(newTab.id);
         }
       } catch (err) {
         console.error('Failed to load initial state:', err);
-        const newTab = { ...createNewTab(), fileHandle: null };
+        const newTab: TabWithHandle = { ...createNewTab(), fileHandle: null, permissionPending: false };
         setTabs([newTab]);
         setActiveTabId(newTab.id);
       } finally {
@@ -207,7 +243,7 @@ export function useEditorStore() {
     }
 
     loadInitialState();
-  }, [refreshTabsFromDisk]);
+  }, [checkAndRefreshTab]);
 
   // ── Refresh Tab on Switch & Window Focus ──────────────────────────────────
 
@@ -263,18 +299,40 @@ export function useEditorStore() {
     };
   }, [isLoading]);
 
-  // ── Session Persistence ───────────────────────────────────────────────────
+  // ── Session Persistence (Debounced to avoid slamming IndexedDB on keystrokes) ─
+
+  const saveSessionTimeoutRef = useRef<number | null>(null);
+
+  const persistSessionNow = useCallback((currentTabs: TabWithHandle[], currentActiveId: string | null) => {
+    if (isLoading) return;
+    const session: SessionState = {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      tabs: currentTabs.map(({ permissionPending, ...tab }) => tab),
+      activeTabId: currentActiveId,
+      lastOpened: Date.now(),
+    };
+    saveSession(session).catch((err) => {
+      console.warn('Failed to save session to IndexedDB:', err);
+    });
+  }, [isLoading]);
 
   useEffect(() => {
     if (isLoading) return;
 
-    const session: SessionState = {
-      tabs: tabs.map((tab) => ({ ...tab })),
-      activeTabId,
-      lastOpened: Date.now(),
+    if (saveSessionTimeoutRef.current) {
+      clearTimeout(saveSessionTimeoutRef.current);
+    }
+
+    saveSessionTimeoutRef.current = window.setTimeout(() => {
+      persistSessionNow(tabsRef.current, activeTabId);
+    }, 500);
+
+    return () => {
+      if (saveSessionTimeoutRef.current) {
+        clearTimeout(saveSessionTimeoutRef.current);
+      }
     };
-    saveSession(session);
-  }, [tabs, activeTabId, isLoading]);
+  }, [tabs, activeTabId, isLoading, persistSessionNow]);
 
   // ── Crash Recovery Interval (IndexedDB, every 10 s) ───────────────────────
 
@@ -316,13 +374,17 @@ export function useEditorStore() {
     autoSaveIntervalRef.current = window.setInterval(async () => {
       const currentTabs = tabsRef.current;
       for (const tab of currentTabs) {
-        if (tab.isModified && tab.fileHandle) {
+        if (tab.isModified && tab.fileHandle?.handle) {
           try {
+            // Only auto-save if write permission is already granted to avoid prompts / fallback downloads
+            const hasPermission = await checkHandleWritePermission(tab.fileHandle.handle);
+            if (!hasPermission) continue;
+
             const handle = await saveFile(tab.content, tab.fileHandle);
             if (handle) {
               setTabs((prev) =>
                 prev.map((t) =>
-                  t.id === tab.id ? { ...t, isModified: false } : t
+                  t.id === tab.id ? { ...t, isModified: false, permissionPending: false } : t
                 )
               );
               clearRecoveryData(tab.id);
@@ -342,17 +404,18 @@ export function useEditorStore() {
     };
   }, [settings.autoSave, settings.autoSaveInterval]);
 
-  // ── beforeunload Warning ──────────────────────────────────────────────────
+  // ── beforeunload Warning & Instant Session Flush ──────────────────────────
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (tabsRef.current.some((t) => t.isModified)) {
         e.preventDefault();
       }
+      persistSessionNow(tabsRef.current, activeTabIdRef.current);
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, []);
+  }, [persistSessionNow]);
 
   // ── Settings ──────────────────────────────────────────────────────────────
 
@@ -832,6 +895,37 @@ export function useEditorStore() {
     return handle;
   }, [activeTabId]);
 
+  const regrantTabPermission = useCallback(
+    async (tabId?: string) => {
+      const targetId = tabId || activeTabId;
+      if (!targetId) return false;
+
+      const tab = tabsRef.current.find((t) => t.id === targetId);
+      if (!tab?.fileHandle?.handle) return false;
+
+      try {
+        const granted = await verifyFileHandlePermission(tab.fileHandle.handle, true);
+        if (granted) {
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.id === targetId ? { ...t, permissionPending: false } : t
+            )
+          );
+          await checkAndRefreshTab(targetId);
+          showToast(`Connected to ${tab.filename}`, 'info');
+          return true;
+        } else {
+          showToast(`Permission not granted for ${tab.filename}`, 'warning');
+          return false;
+        }
+      } catch (err) {
+        console.warn('regrantTabPermission failed:', err);
+        return false;
+      }
+    },
+    [activeTabId, checkAndRefreshTab, showToast]
+  );
+
   const handleSaveFile = useCallback(async (tabId?: string) => {
     const targetId = tabId || activeTabId;
     if (!targetId) return null;
@@ -844,26 +938,32 @@ export function useEditorStore() {
       return handleSaveFileAs(targetId);
     }
 
-    const handle = await saveFile(tab.content, tab.fileHandle);
-    if (!handle) return null;
+    try {
+      const handle = await saveFile(tab.content, tab.fileHandle);
+      if (!handle) return null;
 
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.id === targetId
-          ? {
-              ...t,
-              fileHandle: handle,
-              filename: handle.name,
-              isModified: false,
-              language: getLanguageByExtension(handle.name).name,
-            }
-          : t
-      )
-    );
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === targetId
+            ? {
+                ...t,
+                fileHandle: handle,
+                filename: handle.name,
+                isModified: false,
+                permissionPending: false,
+                language: getLanguageByExtension(handle.name).name,
+              }
+            : t
+        )
+      );
 
-    clearRecoveryData(targetId);
-    return handle;
-  }, [activeTabId, handleSaveFileAs]);
+      clearRecoveryData(targetId);
+      return handle;
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to save file', 'error');
+      return null;
+    }
+  }, [activeTabId, handleSaveFileAs, showToast]);
 
   // ── Tab Ordering / Navigation ─────────────────────────────────────────────
 
@@ -922,6 +1022,7 @@ export function useEditorStore() {
     handleOpenRecentFile,
     handleSaveFile,
     handleSaveFileAs,
+    regrantTabPermission,
     reorderTabs,
     switchToTab,
     switchToNextTab,

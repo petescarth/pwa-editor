@@ -6,6 +6,7 @@ declare global {
     showSaveFilePicker?: (options?: SaveFilePickerOptions) => Promise<FileSystemFileHandle>;
   }
   interface FileSystemFileHandle {
+    queryPermission(descriptor?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
     requestPermission(descriptor?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
   }
 }
@@ -211,12 +212,71 @@ function openFileFallback(maxFileSizeMB: number = 100): Promise<{ content: strin
   });
 }
 
+export async function verifyFileHandlePermission(
+  handle: FileSystemFileHandle,
+  readWrite: boolean = false
+): Promise<boolean> {
+  const mode = readWrite ? 'readwrite' : 'read';
+  try {
+    if ('queryPermission' in handle) {
+      const status = await handle.queryPermission({ mode });
+      if (status === 'granted') {
+        return true;
+      }
+      if (status === 'denied') {
+        return false;
+      }
+    }
+    if ('requestPermission' in handle) {
+      const status = await handle.requestPermission({ mode });
+      return status === 'granted';
+    }
+  } catch (err) {
+    console.warn('Permission query/request failed:', err);
+    return false;
+  }
+  return false;
+}
+
+export async function checkHandleReadPermission(
+  handle: FileSystemFileHandle
+): Promise<boolean> {
+  try {
+    if ('queryPermission' in handle) {
+      const status = await handle.queryPermission({ mode: 'read' });
+      return status === 'granted';
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export async function checkHandleWritePermission(
+  handle: FileSystemFileHandle
+): Promise<boolean> {
+  try {
+    if ('queryPermission' in handle) {
+      const status = await handle.queryPermission({ mode: 'readwrite' });
+      return status === 'granted';
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export async function saveFile(
   content: string,
   handle: FileHandle | null
 ): Promise<FileHandle | null> {
   if (handle?.handle && isFileSystemAccessSupported()) {
     try {
+      const hasPermission = await verifyFileHandlePermission(handle.handle, true);
+      if (!hasPermission) {
+        throw new Error('Permission to write to file was not granted');
+      }
+
       const writable = await handle.handle.createWritable();
       await writable.write(content);
       await writable.close();
@@ -232,6 +292,9 @@ export async function saveFile(
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
         return null;
+      }
+      if ((err as Error).name === 'NotAllowedError' || (err as Error).message.includes('Permission')) {
+        throw err;
       }
       console.warn('File System Access API failed, falling back to download:', err);
       return saveFileAsFallback(content, handle?.name);

@@ -182,6 +182,45 @@ export function SettingsModal({
 
             <section>
               <h3 className="text-sm font-medium text-[#cccccc] mb-3">
+                Startup
+              </h3>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm text-[#cccccc] block">
+                      Reopen files from previous session
+                    </label>
+                    <span className="text-xs text-[#858585]">
+                      Automatically restore open tabs when starting the editor
+                    </span>
+                  </div>
+                  <button
+                    onClick={() =>
+                      handleChange(
+                        'restorePreviousSession',
+                        !localSettings.restorePreviousSession
+                      )
+                    }
+                    className={`w-10 h-5 rounded-full transition-colors ${
+                      localSettings.restorePreviousSession
+                        ? 'bg-[#007acc]'
+                        : 'bg-[#3c3c3c]'
+                    }`}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                        localSettings.restorePreviousSession
+                          ? 'translate-x-5'
+                          : 'translate-x-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <h3 className="text-sm font-medium text-[#cccccc] mb-3">
                 Auto Save
               </h3>
               <div className="space-y-4">
