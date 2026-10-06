@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useEditorStore } from './useEditorStore';
 import {
@@ -169,5 +169,65 @@ describe('useEditorStore - Session Restore', () => {
     });
 
     expect(result.current.settings.restorePreviousSession).toBe(false);
+  });
+
+  it('does NOT call e.preventDefault() on beforeunload in Chrome extension context even when modified', async () => {
+    // Simulate Chrome extension environment
+    const originalChrome = (globalThis as unknown as { chrome?: unknown }).chrome;
+    (globalThis as unknown as { chrome: unknown }).chrome = {
+      runtime: { id: 'test-extension-id' },
+    };
+
+    try {
+      const { result } = renderHook(() => useEditorStore());
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      // Modify the tab
+      act(() => {
+        result.current.updateTabContent(result.current.tabs[0].id, 'Modified content');
+      });
+
+      expect(result.current.tabs[0].isModified).toBe(true);
+
+      const event = new Event('beforeunload', { cancelable: true });
+      const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
+
+      window.dispatchEvent(event);
+
+      // In extension context, preventDefault must NOT be called to avoid crashing Chromium
+      expect(preventDefaultSpy).not.toHaveBeenCalled();
+    } finally {
+      if (originalChrome !== undefined) {
+        (globalThis as unknown as { chrome: unknown }).chrome = originalChrome;
+      } else {
+        delete (globalThis as unknown as { chrome?: unknown }).chrome;
+      }
+    }
+  });
+
+  it('calls e.preventDefault() on beforeunload in standard web context when modified', async () => {
+    delete (globalThis as unknown as { chrome?: unknown }).chrome;
+
+    const { result } = renderHook(() => useEditorStore());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    act(() => {
+      result.current.updateTabContent(result.current.tabs[0].id, 'Web modified text');
+    });
+
+    expect(result.current.tabs[0].isModified).toBe(true);
+
+    const event = new Event('beforeunload', { cancelable: true });
+    const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
+
+    window.dispatchEvent(event);
+
+    expect(preventDefaultSpy).toHaveBeenCalled();
   });
 });

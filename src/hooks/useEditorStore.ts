@@ -91,9 +91,6 @@ export function useEditorStore() {
   const tabsRef = useRef<TabWithHandle[]>([]);
   tabsRef.current = tabs;
 
-  const activeTabIdRef = useRef<string | null>(null);
-  activeTabIdRef.current = activeTabId;
-
   const settingsRef = useRef<EditorSettings>(DEFAULT_SETTINGS);
   settingsRef.current = settings;
 
@@ -194,7 +191,6 @@ export function useEditorStore() {
           tabsRef.current = restoredTabs;
           const initialActiveId = loadedSession.activeTabId || restoredTabs[0].id;
           setActiveTabId(initialActiveId);
-          activeTabIdRef.current = initialActiveId;
           await clearRecoveryData();
 
           // Check permissions for tabs with handles
@@ -244,6 +240,26 @@ export function useEditorStore() {
 
     loadInitialState();
   }, [checkAndRefreshTab]);
+
+  // ── Session Persistence (Debounced to avoid slamming IndexedDB on keystrokes) ─
+
+  const saveSessionTimeoutRef = useRef<number | null>(null);
+  const isInitialMountRef = useRef(true);
+
+  const persistSessionNow = useCallback((currentTabs: TabWithHandle[], currentActiveId: string | null) => {
+    if (isLoading) return;
+    // Never attempt to initiate IndexedDB writes if the page/popup is hidden or closing.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const session: SessionState = {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      tabs: currentTabs.map(({ permissionPending, ...tab }) => tab),
+      activeTabId: currentActiveId,
+      lastOpened: Date.now(),
+    };
+    saveSession(session).catch((err) => {
+      console.warn('Failed to save session to IndexedDB:', err);
+    });
+  }, [isLoading]);
 
   // ── Refresh Tab on Switch & Window Focus ──────────────────────────────────
 
@@ -299,25 +315,15 @@ export function useEditorStore() {
     };
   }, [isLoading]);
 
-  // ── Session Persistence (Debounced to avoid slamming IndexedDB on keystrokes) ─
-
-  const saveSessionTimeoutRef = useRef<number | null>(null);
-
-  const persistSessionNow = useCallback((currentTabs: TabWithHandle[], currentActiveId: string | null) => {
-    if (isLoading) return;
-    const session: SessionState = {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      tabs: currentTabs.map(({ permissionPending, ...tab }) => tab),
-      activeTabId: currentActiveId,
-      lastOpened: Date.now(),
-    };
-    saveSession(session).catch((err) => {
-      console.warn('Failed to save session to IndexedDB:', err);
-    });
-  }, [isLoading]);
-
   useEffect(() => {
     if (isLoading) return;
+
+    // Skip the initial mount run so opening and immediately closing the popup
+    // does not schedule an unneeded IndexedDB write when nothing changed.
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
 
     if (saveSessionTimeoutRef.current) {
       clearTimeout(saveSessionTimeoutRef.current);
@@ -404,18 +410,23 @@ export function useEditorStore() {
     };
   }, [settings.autoSave, settings.autoSaveInterval]);
 
-  // ── beforeunload Warning & Instant Session Flush ──────────────────────────
+  // ── beforeunload Warning (Web only) ───────────────────────────────────────
 
   useEffect(() => {
+    // In Chrome extension contexts (e.g. popups or standalone extension windows),
+    // do not attach beforeunload listeners: extensions cannot display modal dialogs,
+    // and initiating storage or teardown actions here can crash Chromium.
+    const isExtension = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+    if (isExtension) return;
+
     const handler = (e: BeforeUnloadEvent) => {
       if (tabsRef.current.some((t) => t.isModified)) {
         e.preventDefault();
       }
-      persistSessionNow(tabsRef.current, activeTabIdRef.current);
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [persistSessionNow]);
+  }, []);
 
   // ── Settings ──────────────────────────────────────────────────────────────
 
