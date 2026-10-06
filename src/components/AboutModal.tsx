@@ -32,7 +32,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
           <h1 className="text-xl font-semibold text-white mb-1">
             PWA Text Editor
           </h1>
-          <p className="text-sm text-[#858585] mb-4">Version 1.0.2</p>
+          <p className="text-sm text-[#858585] mb-4">Version 1.0.3</p>
           <p className="text-sm text-[#cccccc] mb-4">
             A powerful offline-capable text editor with syntax highlighting for
             multiple programming languages.
