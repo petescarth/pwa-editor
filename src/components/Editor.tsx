@@ -12,7 +12,7 @@ import {
   highlightActiveLine,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+import { searchKeymap, highlightSelectionMatches, search } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { foldGutter, indentOnInput, bracketMatching, foldKeymap } from '@codemirror/language';
 import { lintKeymap } from '@codemirror/lint';
@@ -52,6 +52,7 @@ export function Editor({
       highlightSpecialChars(),
       history(),
       dropCursor(),
+      search({ top: true }),
       EditorState.allowMultipleSelections.of(true),
       indentOnInput(),
       bracketMatching(),
