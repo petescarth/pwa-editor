@@ -177,6 +177,26 @@ export function SettingsModal({
                     />
                   </button>
                 </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-[#cccccc]">Spell Check</label>
+                  <button
+                    onClick={() =>
+                      handleChange('spellCheck', !localSettings.spellCheck)
+                    }
+                    className={`w-10 h-5 rounded-full transition-colors ${
+                      localSettings.spellCheck ? 'bg-[#007acc]' : 'bg-[#3c3c3c]'
+                    }`}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                        localSettings.spellCheck
+                          ? 'translate-x-5'
+                          : 'translate-x-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             </section>
 

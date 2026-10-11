@@ -208,13 +208,17 @@ describe('useEditorStore - Session Restore', () => {
     }
   });
 
-  it('calls e.preventDefault() on beforeunload in standard web context when modified', async () => {
+  it('calls e.preventDefault() on beforeunload in standard web context when modified and restorePreviousSession is false', async () => {
     delete (globalThis as unknown as { chrome?: unknown }).chrome;
 
     const { result } = renderHook(() => useEditorStore());
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.updateSettings({ restorePreviousSession: false });
     });
 
     act(() => {
@@ -229,5 +233,36 @@ describe('useEditorStore - Session Restore', () => {
     window.dispatchEvent(event);
 
     expect(preventDefaultSpy).toHaveBeenCalled();
+  });
+
+  it('does NOT call e.preventDefault() on beforeunload in standard web context when modified and restorePreviousSession is true', async () => {
+    delete (globalThis as unknown as { chrome?: unknown }).chrome;
+
+    await saveSettings({
+      ...DEFAULT_SETTINGS,
+      restorePreviousSession: true,
+    });
+
+    const { result } = renderHook(() => useEditorStore());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // restorePreviousSession is true by default
+    expect(result.current.settings.restorePreviousSession).toBe(true);
+
+    act(() => {
+      result.current.updateTabContent(result.current.tabs[0].id, 'Web modified text');
+    });
+
+    expect(result.current.tabs[0].isModified).toBe(true);
+
+    const event = new Event('beforeunload', { cancelable: true });
+    const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
+
+    window.dispatchEvent(event);
+
+    expect(preventDefaultSpy).not.toHaveBeenCalled();
   });
 });

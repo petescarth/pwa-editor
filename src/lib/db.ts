@@ -12,6 +12,7 @@ interface EditorSettings {
   theme: 'dark' | 'light';
   maxFileSize: number;
   restorePreviousSession: boolean;
+  spellCheck: boolean;
 }
 
 interface TabState {
@@ -110,6 +111,7 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   theme: 'dark',
   maxFileSize: 100,
   restorePreviousSession: true,
+  spellCheck: false,
 };
 
 export async function getSettings(): Promise<EditorSettings> {

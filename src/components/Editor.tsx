@@ -112,6 +112,12 @@ export function Editor({
       extensions.push(EditorView.lineWrapping);
     }
 
+    if (settings.spellCheck) {
+      extensions.push(EditorView.contentAttributes.of({ spellcheck: 'true' }));
+    } else {
+      extensions.push(EditorView.contentAttributes.of({ spellcheck: 'false' }));
+    }
+
     extensions.push(foldGutter());
 
     return extensions;

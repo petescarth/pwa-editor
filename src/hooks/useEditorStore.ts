@@ -420,7 +420,7 @@ export function useEditorStore() {
     if (isExtension) return;
 
     const handler = (e: BeforeUnloadEvent) => {
-      if (tabsRef.current.some((t) => t.isModified)) {
+      if (!settingsRef.current.restorePreviousSession && tabsRef.current.some((t) => t.isModified)) {
         e.preventDefault();
       }
     };
